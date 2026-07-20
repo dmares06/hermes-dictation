@@ -34,6 +34,7 @@ from faster_whisper import WhisperModel
 import pyperclip
 from pynput import keyboard
 import Quartz
+import objc
 from AppKit import (
     NSApplication, NSStatusBar, NSMenu, NSMenuItem, NSImage,
     NSFont, NSWorkspace, NSVariableStatusItemLength,
@@ -377,7 +378,7 @@ class AppDelegate(NSObject):
     """NSApplication delegate for the menubar app."""
 
     def init(self):
-        self = super().init()
+        self = objc.super(AppDelegate, self).init()
         if self:
             self.engine = None
             self.status_item = None
