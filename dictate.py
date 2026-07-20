@@ -39,6 +39,7 @@ from AppKit import (
     NSApplication, NSStatusBar, NSMenu, NSMenuItem, NSImage,
     NSFont, NSWorkspace, NSVariableStatusItemLength,
     NSRunLoop, NSDate, NSTimer, NSColor,
+    NSApplicationActivationPolicyAccessory,
 )
 from Foundation import NSObject, NSLog
 
@@ -76,10 +77,16 @@ FILLER_WORDS = {
 }
 
 # ── Logging ───────────────────────────────────────────────────────────────────
+_LOG_FILE = Path.home() / ".config" / "hermes-dictation" / "hermes.log"
+_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(_LOG_FILE, mode="a"),
+    ],
 )
 log = logging.getLogger("dictate")
 
@@ -402,7 +409,14 @@ class AppDelegate(NSObject):
 
         # Crisp native menubar icon (SF Symbol, template-styled to match menubar).
         self.status_item.setHighlightMode_(True)
+        self.status_item.setVisible_(True)
         self.showIdleIcon()
+        button = self.status_item.button()
+        log.info(
+            f"Menubar status item created: button={button is not None}, "
+            f"image={button.image() is not None if button else 'n/a'}, "
+            f"visible={self.status_item.isVisible()}"
+        )
 
         # Build menu
         self.menu = NSMenu.alloc().init()
@@ -596,12 +610,16 @@ def main():
     engine = DictationEngine(config)
 
     app = NSApplication.sharedApplication()
+    # Force menubar-agent mode (no Dock icon, status item shows) regardless of
+    # how the process was launched. Without this, an NSApplication started via
+    # an exec'd interpreter may run with no visible UI at all.
+    app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
     delegate = AppDelegate.alloc().init()
     delegate.setEngine_(engine)
     app.setDelegate_(delegate)
     app.activateIgnoringOtherApps_(True)
 
-    log.info("🟢 Running in menubar")
+    log.info("🟢 Running in menubar (activation policy = accessory)")
     app.run()
 
 
