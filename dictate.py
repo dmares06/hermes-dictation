@@ -38,7 +38,7 @@ import objc
 from AppKit import (
     NSApplication, NSStatusBar, NSMenu, NSMenuItem, NSImage,
     NSFont, NSWorkspace, NSVariableStatusItemLength,
-    NSRunLoop, NSDate, NSTimer,
+    NSRunLoop, NSDate, NSTimer, NSColor,
 )
 from Foundation import NSObject, NSLog
 
@@ -400,9 +400,9 @@ class AppDelegate(NSObject):
         bar = NSStatusBar.systemStatusBar()
         self.status_item = bar.statusItemWithLength_(NSVariableStatusItemLength)
 
-        # Create a simple status icon (text-based for now)
-        self.status_item.setTitle_("🎙️")
+        # Crisp native menubar icon (SF Symbol, template-styled to match menubar).
         self.status_item.setHighlightMode_(True)
+        self.showIdleIcon()
 
         # Build menu
         self.menu = NSMenu.alloc().init()
@@ -460,6 +460,42 @@ class AppDelegate(NSObject):
 
         self.status_item.setMenu_(self.menu)
 
+    # ── Menubar icon ─────────────────────────────────────────────────────────
+    def _apply_icon(self, symbol_name, recording):
+        """Set the menubar icon to an SF Symbol, falling back to emoji."""
+        button = self.status_item.button()
+        if button is None:
+            return
+        img = None
+        if hasattr(NSImage, "imageWithSystemSymbolName_accessibilityDescription_"):
+            img = NSImage.imageWithSystemSymbolName_accessibilityDescription_(
+                symbol_name, "Hermes Dictation"
+            )
+        if img is None:
+            # Older macOS without SF Symbols — fall back to text glyphs.
+            button.setImage_(None)
+            button.setTitle_("🔴" if recording else "🎙️")
+            return
+        button.setTitle_("")
+        # Template images auto-adapt to light/dark menubars; the recording
+        # icon is tinted red instead so it clearly stands out.
+        img.setTemplate_(not recording)
+        button.setImage_(img)
+        button.setContentTintColor_(NSColor.systemRedColor() if recording else None)
+
+    def showIdleIcon(self):
+        self._apply_icon("mic", False)
+
+    def showRecordingIcon(self):
+        self._apply_icon("mic.fill", True)
+
+    def set_recording_icon(self, recording):
+        """Update the icon from any thread (UI work marshaled to main thread)."""
+        selector = "showRecordingIcon" if recording else "showIdleIcon"
+        self.performSelectorOnMainThread_withObject_waitUntilDone_(
+            selector, None, False
+        )
+
     def start_engine(self):
         """Start the dictation engine and hotkey listener."""
         engine = self.engine
@@ -490,12 +526,17 @@ class AppDelegate(NSObject):
             def on_press(key):
                 if key == hotkey and not pressed.is_set():
                     pressed.set()
-                    threading.Thread(target=lambda: (
-                        engine.start_recording(),
-                        released.wait(),
-                        (audio_path_container.__setitem__(0, engine.stop_recording()),
-                         audio_path_container[0] and engine.process_audio(audio_path_container[0])),
-                    ), daemon=True).start()
+
+                    def cycle():
+                        self.set_recording_icon(True)
+                        engine.start_recording()
+                        released.wait()
+                        audio_path = engine.stop_recording()
+                        self.set_recording_icon(False)
+                        if audio_path:
+                            engine.process_audio(audio_path)
+
+                    threading.Thread(target=cycle, daemon=True).start()
                     return False
 
             def on_release(key):
