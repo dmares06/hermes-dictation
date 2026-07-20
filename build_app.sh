@@ -16,23 +16,23 @@ rm -rf "$APP_BUNDLE"
 # Create bundle structure
 mkdir -p "$MACOS" "$RESOURCES"
 
-# Create the launcher executable
-cat > "$MACOS/HermesDictation" << 'LAUNCHER'
+# Create the launcher executable.
+# PROJECT_DIR is baked in at build time (absolute) so the app works even when
+# copied to /Applications, where a relative path would resolve incorrectly.
+cat > "$MACOS/HermesDictation" << LAUNCHER
 #!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-APP_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-PROJECT_DIR="$(cd "$APP_DIR/../../.." && pwd)"
+PROJECT_DIR="$SCRIPT_DIR"
 
-cd "$PROJECT_DIR"
+cd "\$PROJECT_DIR"
 
 # Set up venv if needed
-VENV_DIR="$PROJECT_DIR/venv"
-if [ ! -d "$VENV_DIR" ]; then
-    python3 -m venv "$VENV_DIR"
-    source "$VENV_DIR/bin/activate"
+VENV_DIR="\$PROJECT_DIR/venv"
+if [ ! -d "\$VENV_DIR" ]; then
+    python3 -m venv "\$VENV_DIR"
+    source "\$VENV_DIR/bin/activate"
     pip install -q faster-whisper sounddevice pynput pyperclip pyobjc numpy
 else
-    source "$VENV_DIR/bin/activate"
+    source "\$VENV_DIR/bin/activate"
 fi
 
 # Request microphone access
@@ -43,7 +43,7 @@ AVFoundation.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
 )
 " 2>/dev/null
 
-exec python3 "$PROJECT_DIR/dictate.py"
+exec python3 "\$PROJECT_DIR/dictate.py"
 LAUNCHER
 
 chmod +x "$MACOS/HermesDictation"
