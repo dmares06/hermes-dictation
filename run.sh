@@ -16,6 +16,13 @@ else
     source "$VENV_DIR/bin/activate"
 fi
 
+# Run under an interpreter named "Hermes Dictation" so macOS shows the app's
+# real name (not "python3.12") in Privacy & Security → Accessibility/Microphone.
+APP_PY="$VENV_DIR/bin/Hermes Dictation"
+if [ ! -f "$APP_PY" ]; then
+    cp "$(python3 -c 'import os,sys; print(os.path.realpath(sys.executable))')" "$APP_PY"
+fi
+
 echo "🎙️  Hermes Dictation Launcher"
 echo "   Starting menubar app..."
 echo "   Hold Right Option → speak → release → text appears"
@@ -29,8 +36,9 @@ status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(AVFoundat
 print(status)
 " 2>/dev/null)
 
-# Request mic permission if needed
-python3 -c "
+# Request mic permission if needed (under the named interpreter so the prompt
+# and the Microphone list entry read "Hermes Dictation").
+"$APP_PY" -c "
 import AVFoundation
 import objc
 AVFoundation.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
@@ -39,4 +47,4 @@ AVFoundation.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
 print('Microphone access requested')
 " 2>/dev/null
 
-python3 "${SCRIPT_DIR}/dictate.py" "$@"
+"$APP_PY" "${SCRIPT_DIR}/dictate.py" "$@"

@@ -35,15 +35,22 @@ else
     source "\$VENV_DIR/bin/activate"
 fi
 
+# Run under an interpreter named "Hermes Dictation" so macOS Privacy prompts
+# and the Accessibility/Microphone lists show the app's name, not "python3.x".
+APP_PY="\$VENV_DIR/bin/Hermes Dictation"
+if [ ! -f "\$APP_PY" ]; then
+    cp "\$(python3 -c 'import os,sys; print(os.path.realpath(sys.executable))')" "\$APP_PY"
+fi
+
 # Request microphone access
-python3 -c "
+"\$APP_PY" -c "
 import AVFoundation
 AVFoundation.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
     AVFoundation.AVMediaTypeAudio, lambda granted: None
 )
 " 2>/dev/null
 
-exec python3 "\$PROJECT_DIR/dictate.py"
+exec "\$APP_PY" "\$PROJECT_DIR/dictate.py"
 LAUNCHER
 
 chmod +x "$MACOS/HermesDictation"
