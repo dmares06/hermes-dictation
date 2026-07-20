@@ -39,14 +39,6 @@ fi
 # to render. Shows as "python3.x" in Privacy & Security (cosmetic only).
 APP_PY="python3"
 
-# Request microphone access
-"\$APP_PY" -c "
-import AVFoundation
-AVFoundation.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
-    AVFoundation.AVMediaTypeAudio, lambda granted: None
-)
-" 2>/dev/null
-
 exec "\$APP_PY" "\$PROJECT_DIR/dictate.py"
 LAUNCHER
 

@@ -23,26 +23,7 @@ APP_PY="python3"
 
 echo "🎙️  Hermes Dictation Launcher"
 echo "   Starting menubar app..."
-echo "   Hold Right Option → speak → release → text appears"
+echo "   Hold Fn / Globe → speak → release → text appears"
 echo ""
-
-# Check for microphone permission
-MIC_CHECK=$(python3 -c "
-import AVFoundation
-import objc
-status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(AVFoundation.AVMediaTypeAudio)
-print(status)
-" 2>/dev/null)
-
-# Request mic permission if needed (under the named interpreter so the prompt
-# and the Microphone list entry read "Hermes Dictation").
-"$APP_PY" -c "
-import AVFoundation
-import objc
-AVFoundation.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
-    AVFoundation.AVMediaTypeAudio, lambda granted: None
-)
-print('Microphone access requested')
-" 2>/dev/null
 
 "$APP_PY" "${SCRIPT_DIR}/dictate.py" "$@"

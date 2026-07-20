@@ -24,10 +24,12 @@ import queue
 import json
 import logging
 import subprocess
+import webbrowser
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Optional
 
+import AVFoundation
 import sounddevice as sd
 import numpy as np
 from faster_whisper import WhisperModel
@@ -38,10 +40,17 @@ import objc
 from AppKit import (
     NSApplication, NSStatusBar, NSMenu, NSMenuItem, NSImage,
     NSFont, NSWorkspace, NSVariableStatusItemLength,
-    NSRunLoop, NSDate, NSTimer, NSColor,
+    NSRunLoop, NSDate, NSTimer, NSColor, NSPanel, NSView, NSBezierPath,
+    NSScreen, NSProgressIndicator, NSTextField,
+    NSWindowStyleMaskBorderless, NSBackingStoreBuffered,
+    NSWindowCollectionBehaviorCanJoinAllSpaces,
+    NSWindowCollectionBehaviorStationary, NSFloatingWindowLevel,
+    NSProgressIndicatorStyleSpinning, NSControlSizeSmall,
     NSApplicationActivationPolicyAccessory,
 )
-from Foundation import NSObject, NSLog
+from Foundation import NSObject, NSLog, NSMakeRect, NSMakePoint
+from hermes_store import LocalStore
+from hermes_hub import HubServer
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 CONFIG_DIR = Path.home() / ".config" / "hermes-dictation"
@@ -49,8 +58,9 @@ CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 DEFAULT_CONFIG = {
-    "model_size": "base",        # tiny, base, small, medium, large-v3
-    "hotkey": "alt_r",           # alt_r (Right Option), f5, caps_lock, f6, etc.
+    "model_size": "small",       # tiny, base, small, medium, large-v3
+    "hotkey": "fn",              # Fn / Globe key
+    "language": "en",            # English decoding improves accuracy and speed
     "compute_type": "int8",      # int8, float16, float32
     "device": "auto",            # auto, cpu, cuda
     "sample_rate": 16000,
@@ -59,6 +69,7 @@ DEFAULT_CONFIG = {
     "min_silence_ms": 500,
     "auto_punctuate": True,
     "remove_fillers": True,
+    "speed_mode": "quality",     # quality or fast
     "show_window": False,        # Show a window on record (future)
     "launch_at_login": False,
 }
@@ -70,11 +81,44 @@ BLOCKSIZE = 1024
 TEMP_DIR = Path(tempfile.gettempdir()) / "hermes-dictation"
 TEMP_DIR.mkdir(exist_ok=True)
 
-FILLER_WORDS = {
-    "um", "uh", "uhh", "umm", "ah", "ahh", "er", "hmm", "mm", "mmm",
-    "like", "you know", "i mean", "sort of", "kind of", "basically",
-    "actually", "literally", "honestly", "so", "well",
-}
+HARD_FILLER_PATTERN = re.compile(
+    r"\b(?:um+|uh+|ah+|er+|hmm+|mm+)\b[\s,;:]*", re.IGNORECASE
+)
+DISCOURSE_FILLER_PATTERN = re.compile(
+    r"(?:^|(?<=[.!?,;:]))\s*"
+    r"(?:like|so|well|basically|actually|literally|honestly|"
+    r"you know|i mean|sort of|kind of)\b\s*[,;:]?\s*",
+    re.IGNORECASE,
+)
+
+
+def clean_text(text: str, config: Optional[dict] = None) -> str:
+    """Clean up transcribed text using the configured dictation options."""
+    if not text:
+        return ""
+
+    config = config or DEFAULT_CONFIG
+    text = text.strip()
+
+    if config.get("remove_fillers", True):
+        # Always remove unmistakable hesitation sounds. Remove softer
+        # discourse fillers only at a sentence/discourse boundary so words
+        # such as "like" in "I like this" remain intact.
+        text = HARD_FILLER_PATTERN.sub("", text)
+        text = DISCOURSE_FILLER_PATTERN.sub("", text)
+
+    text = re.sub(r'\b(\w+)\s+\1\b', r'\1', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s+', ' ', text).strip()
+    text = re.sub(r'\s+([,.!?])', r'\1', text)
+    text = text.strip(",;: ")
+
+    if text:
+        text = text[0].upper() + text[1:]
+
+    if config.get("auto_punctuate", True) and text and text[-1] not in ".!?":
+        text += "."
+
+    return text
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 _LOG_FILE = Path.home() / ".config" / "hermes-dictation" / "hermes.log"
@@ -126,8 +170,17 @@ HOTKEY_MAP = {
     "f10": keyboard.Key.f10,
     "f11": keyboard.Key.f11,
     "f12": keyboard.Key.f12,
-    "fn": keyboard.Key.media_previous,  # "fn" maps differently
 }
+
+# The Fn/Globe key is a modifier event on macOS, not the media-key event that
+# the old "media_previous" workaround represented. Its virtual key code is
+# 0x3F and it sets the secondary-Fn flag on flags-changed events.
+FN_KEY = keyboard.KeyCode.from_vk(0x3F)
+HOTKEY_MAP["fn"] = FN_KEY
+try:
+    keyboard.Listener._MODIFIER_FLAGS[FN_KEY] = Quartz.kCGEventFlagMaskSecondaryFn
+except AttributeError:
+    log.warning("Fn/Globe hotkey is unavailable in this pynput backend")
 
 # ── Dictation Engine ──────────────────────────────────────────────────────────
 
@@ -142,6 +195,7 @@ class DictationEngine:
         self.audio_stream: Optional[sd.InputStream] = None
         self._lock = threading.Lock()
         self._hotkey_obj = self._resolve_hotkey()
+        self.store: Optional[LocalStore] = None
 
     def _resolve_hotkey(self):
         key_name = self.config.get("hotkey", "alt_r")
@@ -156,7 +210,7 @@ class DictationEngine:
     def start_stream(self):
         """Start the audio input stream."""
         if self.audio_stream is not None:
-            return
+            return True
         try:
             self.audio_stream = sd.InputStream(
                 samplerate=SAMPLE_RATE,
@@ -167,9 +221,11 @@ class DictationEngine:
             )
             self.audio_stream.start()
             log.info("Audio stream started")
+            return True
         except Exception as e:
             log.error(f"Failed to start audio stream: {e}")
             log.warning("Try: brew install portaudio, or check System Settings > Privacy > Microphone")
+            return False
 
     def stop_stream(self):
         if self.audio_stream:
@@ -183,7 +239,7 @@ class DictationEngine:
         if self.model is not None:
             return self.model
 
-        model_size = self.config.get("model_size", "base")
+        model_size = self.config.get("model_size", "small")
         compute_type = self.config.get("compute_type", "int8")
         device = self.config.get("device", "auto")
 
@@ -275,12 +331,15 @@ class DictationEngine:
         log.info("Transcribing...")
         start = time.time()
 
+        fast_mode = self.config.get("speed_mode", "quality") == "fast"
         segments, info = model.transcribe(
             audio_path,
-            beam_size=5,
-            best_of=5,
+            beam_size=1 if fast_mode else 5,
+            best_of=1 if fast_mode else 5,
             temperature=0.0,
-            condition_on_previous_text=True,
+            language=self.config.get("language") or None,
+            initial_prompt="Natural English dictation with ordinary punctuation.",
+            condition_on_previous_text=False,
             vad_filter=True,
             vad_parameters=dict(
                 min_silence_duration_ms=self.config.get("min_silence_ms", 500),
@@ -299,30 +358,7 @@ class DictationEngine:
 
     def clean_text(self, text: str) -> str:
         """Clean up transcribed text."""
-        if not text:
-            return ""
-
-        text = text.strip()
-
-        if self.config.get("remove_fillers", True):
-            for filler in FILLER_WORDS:
-                pattern = re.compile(r'\b' + re.escape(filler) + r'\b', re.IGNORECASE)
-                text = pattern.sub('', text)
-
-        # Remove repeated words
-        text = re.sub(r'\b(\w+)\s+\1\b', r'\1', text, flags=re.IGNORECASE)
-        # Collapse spaces
-        text = re.sub(r'\s+', ' ', text).strip()
-        text = text.strip(",;: ")
-
-        # Capitalize
-        if text:
-            text = text[0].upper() + text[1:]
-
-        if self.config.get("auto_punctuate", True) and text and text[-1] not in ".!?":
-            text += "."
-
-        return text
+        return clean_text(text, self.config)
 
     def type_text(self, text: str):
         """Type text at cursor position using Cmd+V."""
@@ -355,8 +391,14 @@ class DictationEngine:
             log.error(f"Failed to type: {e}")
 
     def process_audio(self, audio_path: str):
-        """Full pipeline: transcribe → clean → type."""
+        """Full pipeline: transcribe → clean → snippet/type → save history."""
         try:
+            duration = 0.0
+            try:
+                with wave.open(audio_path, "rb") as audio_file:
+                    duration = audio_file.getnframes() / max(1, audio_file.getframerate())
+            except Exception:
+                pass
             raw = self.transcribe(audio_path)
             if not raw:
                 log.info("No speech detected")
@@ -366,7 +408,23 @@ class DictationEngine:
             log.info(f"Raw: \"{raw}\"")
             log.info(f"Clean: \"{cleaned}\"")
 
-            self.type_text(cleaned)
+            if self.store is not None:
+                self.store.add_transcript(cleaned, raw, duration)
+                snippet = self.store.resolve_snippet(cleaned)
+            else:
+                snippet = None
+
+            if snippet and snippet.get("action") == "open":
+                target = snippet.get("value", "").strip()
+                if target.startswith(("https://", "http://")):
+                    webbrowser.open(target)
+                    log.info("Opened snippet URL for %s", snippet.get("trigger"))
+                else:
+                    log.warning("Snippet URL ignored because it is not http(s): %s", target)
+            elif snippet:
+                self.type_text(snippet.get("value", ""))
+            else:
+                self.type_text(cleaned)
 
         except Exception as e:
             log.error(f"Processing failed: {e}")
@@ -381,6 +439,92 @@ class DictationEngine:
 
 # ── macOS Menubar App ────────────────────────────────────────────────────────
 
+class TranscriptionIndicatorView(NSView):
+    """Small floating pill shown while local Whisper is transcribing."""
+
+    def drawRect_(self, rect):
+        bounds = self.bounds()
+        background = NSColor.colorWithCalibratedWhite_alpha_(0.015, 0.98)
+        background.setFill()
+        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            bounds, bounds.size.height / 2, bounds.size.height / 2
+        ).fill()
+
+        # A restrained dotted waveform, echoing the reference indicator.
+        dot_color = NSColor.colorWithCalibratedWhite_alpha_(0.52, 0.9)
+        dot_color.setFill()
+        dot_sizes = [2, 3, 4, 3, 2, 3, 4]
+        for index, dot_height in enumerate(dot_sizes):
+            x = 22 + index * 7
+            y = (bounds.size.height - dot_height) / 2
+            NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(x, y, 4, dot_height)).fill()
+
+
+class TranscriptionIndicator(NSPanel):
+    """Borderless, non-interactive transcription status panel."""
+
+    def init(self):
+        frame = NSMakeRect(0, 0, 240, 54)
+        self = objc.super(TranscriptionIndicator, self).initWithContentRect_styleMask_backing_defer_(
+            frame,
+            NSWindowStyleMaskBorderless,
+            NSBackingStoreBuffered,
+            False,
+        )
+        if self:
+            self.setOpaque_(False)
+            self.setBackgroundColor_(NSColor.clearColor())
+            self.setHasShadow_(True)
+            self.setLevel_(NSFloatingWindowLevel)
+            self.setIgnoresMouseEvents_(True)
+            self.setHidesOnDeactivate_(False)
+            self.setCollectionBehavior_(
+                NSWindowCollectionBehaviorCanJoinAllSpaces
+                | NSWindowCollectionBehaviorStationary
+            )
+
+            content = TranscriptionIndicatorView.alloc().initWithFrame_(frame)
+            self.setContentView_(content)
+
+            label = NSTextField.alloc().initWithFrame_(NSMakeRect(70, 16, 110, 22))
+            label.setStringValue_("Listening")
+            label.setBezeled_(False)
+            label.setDrawsBackground_(False)
+            label.setEditable_(False)
+            label.setSelectable_(False)
+            label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(0.82, 1.0))
+            label.setFont_(NSFont.systemFontOfSize_(12))
+            content.addSubview_(label)
+
+            spinner = NSProgressIndicator.alloc().initWithFrame_(NSMakeRect(198, 15, 24, 24))
+            spinner.setStyle_(NSProgressIndicatorStyleSpinning)
+            spinner.setControlSize_(NSControlSizeSmall)
+            spinner.setIndeterminate_(True)
+            spinner.setDisplayedWhenStopped_(False)
+            content.addSubview_(spinner)
+            self.label = label
+            self.spinner = spinner
+        return self
+
+    def set_state(self, state):
+        self.label.setStringValue_("Listening" if state == "listening" else "Transcribing")
+
+    def show(self, state="transcribing"):
+        self.set_state(state)
+        screen = NSScreen.mainScreen()
+        if screen is not None:
+            visible = screen.visibleFrame()
+            width, height = 240, 54
+            x = visible.origin.x + (visible.size.width - width) / 2
+            y = visible.origin.y + 64
+            self.setFrameOrigin_(NSMakePoint(x, y))
+        self.spinner.startAnimation_(None)
+        self.orderFrontRegardless()
+
+    def hide(self):
+        self.spinner.stopAnimation_(None)
+        self.orderOut_(None)
+
 class AppDelegate(NSObject):
     """NSApplication delegate for the menubar app."""
 
@@ -392,18 +536,38 @@ class AppDelegate(NSObject):
             self.menu = None
             self.status_icon = None
             self.listening = False
+            self.transcription_indicator = None
+            self.ready_status_title = "Ready - Hold Fn / Globe"
+            self.store = None
+            self.hub = None
+            self.paused = False
+            self.pause_item = None
         return self
 
     def setEngine_(self, engine):
         self.engine = engine
 
+    def setStore_(self, store):
+        self.store = store
+        self.engine.store = store
+
+    def setHub_(self, hub):
+        self.hub = hub
+
     def applicationDidFinishLaunching_(self, notification):
         log.info("App finished launching")
         self.setup_menubar()
+        if self.hub is not None:
+            self.hub.start()
         self.start_engine()
 
     def setup_menubar(self):
         """Create the macOS menubar status item."""
+        self.transcription_indicator = TranscriptionIndicator.alloc().init()
+        configured_hotkey = self.engine.config.get("hotkey", "alt_r")
+        hotkey_label = "Fn / Globe" if configured_hotkey == "fn" else configured_hotkey
+        self.ready_status_title = f"Ready - Hold {hotkey_label}"
+
         bar = NSStatusBar.systemStatusBar()
         self.status_item = bar.statusItemWithLength_(NSVariableStatusItemLength)
 
@@ -423,7 +587,7 @@ class AppDelegate(NSObject):
 
         # Status indicator
         status_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Ready - Hold Right Option", None, ""
+            self.ready_status_title, None, ""
         )
         self.status_indicator = status_item
         self.menu.addItem_(status_item)
@@ -449,9 +613,10 @@ class AppDelegate(NSObject):
 
         # Hotkey selector
         hotkey_menu = NSMenu.alloc().init()
-        for key_name in ["alt_r", "alt_l", "ctrl_r", "f5", "f6", "caps_lock"]:
+        for key_name in ["alt_r", "alt_l", "ctrl_r", "f5", "f6", "caps_lock", "fn"]:
+            title = "Hold Fn / Globe" if key_name == "fn" else f"Hold {key_name}"
             item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-                f"Hold {key_name}", "changeHotkey:", ""
+                title, "changeHotkey:", ""
             )
             item.setRepresentedObject_(key_name)
             if key_name == self.engine.config.get("hotkey"):
@@ -463,6 +628,17 @@ class AppDelegate(NSObject):
         )
         hotkey_item.setSubmenu_(hotkey_menu)
         self.menu.addItem_(hotkey_item)
+
+        pause_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Pause Dictation", "togglePause:", ""
+        )
+        self.pause_item = pause_item
+        self.menu.addItem_(pause_item)
+
+        hub_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Open Hermes Hub", "openHub:", ""
+        )
+        self.menu.addItem_(hub_item)
 
         self.menu.addItem_(NSMenuItem.separatorItem())
 
@@ -510,6 +686,38 @@ class AppDelegate(NSObject):
             selector, None, False
         )
 
+    def showTranscribing(self):
+        if self.transcription_indicator is not None:
+            self.transcription_indicator.show("transcribing")
+        if self.status_indicator is not None:
+            self.status_indicator.setTitle_("Transcribing…")
+
+    def showListening(self):
+        if self.transcription_indicator is not None:
+            self.transcription_indicator.show("listening")
+        if self.status_indicator is not None:
+            self.status_indicator.setTitle_("Listening… Release to transcribe")
+
+    def hideTranscribing(self):
+        if self.transcription_indicator is not None:
+            self.transcription_indicator.hide()
+        if self.status_indicator is not None:
+            self.status_indicator.setTitle_(self.ready_status_title)
+
+    def set_transcribing(self, transcribing):
+        """Show or hide the floating indicator from any worker thread."""
+        selector = "showTranscribing" if transcribing else "hideTranscribing"
+        self.performSelectorOnMainThread_withObject_waitUntilDone_(
+            selector, None, False
+        )
+
+    def set_listening(self, listening):
+        """Show the indicator as soon as recording begins."""
+        selector = "showListening" if listening else "hideTranscribing"
+        self.performSelectorOnMainThread_withObject_waitUntilDone_(
+            selector, None, False
+        )
+
     def start_engine(self):
         """Start the dictation engine and hotkey listener."""
         engine = self.engine
@@ -530,39 +738,47 @@ class AppDelegate(NSObject):
     def _run_hotkey_loop(self):
         """Run the pynput hotkey listener loop."""
         engine = self.engine
-        hotkey = self.hotkey
+        pressed = False
+        released = None
 
-        while True:
-            pressed = threading.Event()
-            released = threading.Event()
-            audio_path_container = [None]
+        def on_press(key):
+            nonlocal pressed, released
+            if key == self.hotkey and not pressed and not self.paused:
+                pressed = True
+                released = threading.Event()
+                release_event = released
 
-            def on_press(key):
-                if key == hotkey and not pressed.is_set():
-                    pressed.set()
-
-                    def cycle():
-                        self.set_recording_icon(True)
-                        engine.start_recording()
-                        released.wait()
-                        audio_path = engine.stop_recording()
-                        self.set_recording_icon(False)
-                        if audio_path:
+                def cycle():
+                    self.set_recording_icon(True)
+                    self.set_listening(True)
+                    engine.start_recording()
+                    release_event.wait()
+                    audio_path = engine.stop_recording()
+                    self.set_recording_icon(False)
+                    if audio_path:
+                        self.set_transcribing(True)
+                        try:
                             engine.process_audio(audio_path)
+                        finally:
+                            self.set_transcribing(False)
+                    else:
+                        self.set_listening(False)
 
-                    threading.Thread(target=cycle, daemon=True).start()
-                    return False
+                threading.Thread(target=cycle, daemon=True).start()
+                # Keep this one listener alive so pynput does not repeatedly
+                # reinitialize macOS's keyboard input-source state.
 
-            def on_release(key):
-                if key == hotkey and pressed.is_set():
+        def on_release(key):
+            nonlocal pressed, released
+            if key == self.hotkey and pressed:
+                pressed = False
+                if released is not None:
                     released.set()
-                    return False
 
-            with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
-                listener.join()
-
-            # Small gap between dictations
-            time.sleep(0.15)
+        # Keep one listener for the lifetime of the app. Recreating it after
+        # every dictation can crash macOS 26 inside TSMGetInputSourceProperty.
+        with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
+            listener.join()
 
     def changeModel_(self, sender):
         model_size = sender.representedObject()
@@ -587,7 +803,9 @@ class AppDelegate(NSObject):
         self.engine._hotkey_obj = self.engine._resolve_hotkey()
         self.hotkey = self.engine._hotkey_obj
 
-        self.status_indicator.setTitle_(f"Ready - Hold {key_name}")
+        hotkey_label = "Fn / Globe" if key_name == "fn" else key_name
+        self.ready_status_title = f"Ready - Hold {hotkey_label}"
+        self.status_indicator.setTitle_(self.ready_status_title)
 
         for item in self.menu.itemArray():
             if item.title() == "Hotkey":
@@ -596,6 +814,61 @@ class AppDelegate(NSObject):
                 break
 
         save_config(self.engine.config)
+
+    def togglePause_(self, sender):
+        self.paused = not self.paused
+        self.refreshSettingsUI()
+        log.info("Dictation %s", "paused" if self.paused else "resumed")
+
+    def refreshSettingsUI(self):
+        """Apply browser-updated settings on the AppKit main thread."""
+        if self.pause_item is not None:
+            self.pause_item.setTitle_("Resume Dictation" if self.paused else "Pause Dictation")
+        if self.status_indicator is not None:
+            self.status_indicator.setTitle_("Paused" if self.paused else self.ready_status_title)
+
+    def openHub_(self, sender):
+        if self.hub is not None:
+            self.hub.open()
+
+    def get_settings(self):
+        settings = dict(self.engine.config)
+        settings["paused"] = self.paused
+        settings["hub_url"] = self.hub.url if self.hub is not None else None
+        return settings
+
+    def update_settings(self, updates):
+        allowed = {
+            "hotkey", "model_size", "speed_mode", "remove_fillers",
+            "auto_punctuate", "paused",
+        }
+        changed = {key: value for key, value in updates.items() if key in allowed}
+        valid_hotkeys = {"fn", "alt_r", "alt_l", "ctrl_r", "f5", "f6", "caps_lock"}
+        valid_models = {"tiny", "base", "small", "medium", "large-v3"}
+        if "hotkey" in changed and changed["hotkey"] not in valid_hotkeys:
+            raise ValueError("Unsupported shortcut")
+        if "model_size" in changed and changed["model_size"] not in valid_models:
+            raise ValueError("Unsupported model")
+        if "speed_mode" in changed and changed["speed_mode"] not in {"fast", "quality"}:
+            raise ValueError("Unsupported transcription mode")
+
+        old_model = self.engine.config.get("model_size")
+        self.engine.config.update(changed)
+        if "hotkey" in changed:
+            self.engine._hotkey_obj = self.engine._resolve_hotkey()
+            self.hotkey = self.engine._hotkey_obj
+            label = "Fn / Globe" if changed["hotkey"] == "fn" else changed["hotkey"]
+            self.ready_status_title = f"Ready - Hold {label}"
+        if changed.get("model_size") and changed["model_size"] != old_model:
+            self.engine.model = None
+            threading.Thread(target=self.engine.load_model, daemon=True).start()
+        if "paused" in changed:
+            self.paused = bool(changed["paused"])
+        self.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "refreshSettingsUI", None, False
+        )
+        save_config(self.engine.config)
+        return self.get_settings()
 
 
 def main():
@@ -608,6 +881,7 @@ def main():
     log.info(f"Config: model={config['model_size']}, hotkey={config['hotkey']}")
 
     engine = DictationEngine(config)
+    store = LocalStore()
 
     app = NSApplication.sharedApplication()
     # Force menubar-agent mode (no Dock icon, status item shows) regardless of
@@ -616,8 +890,26 @@ def main():
     app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
     delegate = AppDelegate.alloc().init()
     delegate.setEngine_(engine)
+    delegate.setStore_(store)
+    delegate.setHub_(HubServer(store, delegate.get_settings, delegate.update_settings))
     app.setDelegate_(delegate)
     app.activateIgnoringOtherApps_(True)
+
+    # Request access from the actual app process. A separate short-lived
+    # launcher probe could be terminated by macOS before setup completed.
+    mic_status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(
+        AVFoundation.AVMediaTypeAudio
+    )
+    if mic_status == AVFoundation.AVAuthorizationStatusNotDetermined:
+        log.info("Requesting microphone access")
+        AVFoundation.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
+            AVFoundation.AVMediaTypeAudio,
+            lambda granted: log.info(
+                "Microphone access %s", "granted" if granted else "denied"
+            ),
+        )
+    elif mic_status != AVFoundation.AVAuthorizationStatusAuthorized:
+        log.warning("Microphone access is not authorized (status=%s)", mic_status)
 
     log.info("🟢 Running in menubar (activation policy = accessory)")
     app.run()

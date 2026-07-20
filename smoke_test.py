@@ -43,8 +43,8 @@ def test_text_cleanup():
     """Test the text cleanup logic."""
     print("🔍 Test 4: Text cleanup...")
 
-    # Import the module's functions
-    sys.path.insert(0, "/Users/dylan/hermes-dictation")
+    # Import the module's functions from this checkout, regardless of cwd.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from dictate import clean_text
 
     test_cases = [
@@ -82,6 +82,11 @@ def test_sounddevice():
     import sounddevice as sd
     devices = sd.query_devices()
     input_devices = [d for d in devices if d['max_input_channels'] > 0]
+    if not input_devices:
+        raise RuntimeError(
+            "No microphone input device is available. Check macOS microphone "
+            "permissions and select an input device in Sound settings."
+        )
     print(f"   Found {len(input_devices)} input device(s):")
     for d in input_devices:
         print(f"     - {d['name']} ({d['max_input_channels']} ch, {int(d['default_samplerate'])}Hz)")
@@ -129,5 +134,5 @@ if __name__ == "__main__":
     print("=" * 55)
     print(f"✅ {passed}/{len(tests)} tests passed")
     if passed == len(tests):
-        print("🎉 All systems go! Run with: python3 /Users/dylan/hermes-dictation/dictate.py")
+        print(f"🎉 All systems go! Run with: {sys.executable} {os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dictate.py')}")
     print("=" * 55)
