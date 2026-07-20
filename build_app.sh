@@ -35,12 +35,9 @@ else
     source "\$VENV_DIR/bin/activate"
 fi
 
-# Run under an interpreter named "Hermes Dictation" so macOS Privacy prompts
-# and the Accessibility/Microphone lists show the app's name, not "python3.x".
-APP_PY="\$VENV_DIR/bin/Hermes Dictation"
-if [ ! -f "\$APP_PY" ]; then
-    cp "\$(python3 -c 'import os,sys; print(os.path.realpath(sys.executable))')" "\$APP_PY"
-fi
+# Use the venv's real (framework) interpreter — required for the menubar icon
+# to render. Shows as "python3.x" in Privacy & Security (cosmetic only).
+APP_PY="python3"
 
 # Request microphone access
 "\$APP_PY" -c "

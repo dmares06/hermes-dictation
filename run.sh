@@ -16,12 +16,10 @@ else
     source "$VENV_DIR/bin/activate"
 fi
 
-# Run under an interpreter named "Hermes Dictation" so macOS shows the app's
-# real name (not "python3.12") in Privacy & Security → Accessibility/Microphone.
-APP_PY="$VENV_DIR/bin/Hermes Dictation"
-if [ ! -f "$APP_PY" ]; then
-    cp "$(python3 -c 'import os,sys; print(os.path.realpath(sys.executable))')" "$APP_PY"
-fi
+# Use the venv's real (framework) interpreter — required for the menubar icon
+# to actually render. NOTE: this shows as "python3.x" in Privacy & Security;
+# a proper py2app bundle is the correct way to get the app's real name there.
+APP_PY="python3"
 
 echo "🎙️  Hermes Dictation Launcher"
 echo "   Starting menubar app..."
