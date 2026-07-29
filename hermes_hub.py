@@ -13,6 +13,7 @@ from hermes_store import LocalStore
 
 
 log = logging.getLogger("hermes.hub")
+HUB_PORT = 8765
 
 
 class HubServer:
@@ -63,6 +64,8 @@ class HubServer:
                 try:
                     if path == "/":
                         return self._send(200, HUB_HTML, "text/html; charset=utf-8")
+                    if path == "/favicon.svg":
+                        return self._send(200, HUB_FAVICON, "image/svg+xml; charset=utf-8")
                     if path == "/api/stats":
                         return self._send(200, server.store.stats())
                     if path == "/api/transcripts":
@@ -116,7 +119,13 @@ class HubServer:
                 except (ValueError, IndexError) as exc:
                     return self._send(400, {"error": str(exc)})
 
-        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), RequestHandler)
+        try:
+            self.httpd = ThreadingHTTPServer(("127.0.0.1", HUB_PORT), RequestHandler)
+        except OSError:
+            # Keep startup resilient if another process has the preferred
+            # bookmarkable port; the app will still report the fallback URL.
+            log.warning("Port %s is busy; using a temporary Hub port", HUB_PORT)
+            self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), RequestHandler)
         self.httpd.daemon_threads = True
         host, port = self.httpd.server_address
         self.url = f"http://{host}:{port}/"
@@ -138,10 +147,19 @@ class HubServer:
             self.url = None
 
 
+HUB_FAVICON = r'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#246f70"/><stop offset="1" stop-color="#7552a8"/></linearGradient></defs>
+<rect width="64" height="64" rx="16" fill="url(#g)"/>
+<rect x="24" y="12" width="16" height="29" rx="8" fill="#fff"/>
+<path d="M16 32c0 10 7 17 16 17s16-7 16-17M32 49v7M23 56h18" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+<circle cx="48" cy="14" r="4" fill="#f4b184"/>
+</svg>'''
+
+
 HUB_HTML = r'''<!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title>Hermes Hub</title>
 <style>
 :root{--ink:#242126;--muted:#7e7880;--line:#e9e4dc;--paper:#fbfaf7;--card:#fff;--teal:#216d6d;--teal-soft:#dcefed;--lilac:#e9dcfa;--peach:#f6e1d4;--shadow:0 14px 36px rgba(50,36,29,.06)}

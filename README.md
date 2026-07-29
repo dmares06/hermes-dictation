@@ -41,7 +41,7 @@ cd ~/hermes-dictation
 # Create virtual environment with all dependencies
 python3 -m venv venv
 source venv/bin/activate
-pip install faster-whisper sounddevice pynput pyperclip pyobjc numpy
+pip install faster-whisper mlx-whisper sounddevice pynput pyperclip pyobjc numpy
 
 # Run it
 ./run.sh
@@ -67,13 +67,19 @@ open /Applications/Hermes\ Dictation.app
 4. Release the key — transcribed text appears at your cursor
 
 While Whisper is working, Hermes shows a small floating transcription pill
-near the bottom of the screen. The default `small` model favors dictation
-accuracy; the first launch downloads its local model and later launches use
-the cached copy.
+near the bottom of the screen. On Apple Silicon, Hermes automatically uses
+MLX Whisper to run transcription through Apple's Metal stack; faster-whisper
+remains the fallback. The default English-specialized `small` model favors
+dictation accuracy, while Fast transcription mode favors quicker cursor
+insertion. The first launch downloads its local model and later launches use
+the cached copy. Quality mode remains available in Hermes Hub under Settings
+when you want the highest-confidence decoding for difficult audio.
 
 ## Hermes Hub
 
-Open **Hermes Hub** from the menubar menu. It is a local-only dashboard with:
+Hermes automatically opens **Hermes Hub** when the app launches. You can also
+open it from the menubar menu. Its normal bookmarkable address is
+`http://127.0.0.1:8765/`. It is a local-only dashboard with:
 
 - monthly and all-time word counts, sessions, average WPM, and recent activity
 - searchable transcript history saved in local SQLite
@@ -147,4 +153,4 @@ The app needs two permissions on first run:
 | `run.sh` | Launcher script (creates venv if needed) |
 | `build_app.sh` | Build macOS .app bundle |
 | `~/.config/hermes-dictation/config.json` | Persistent config |
-| `~/.cache/whisper/` | Whisper model cache ~1.5GB |
+| `~/.cache/whisper/` and `~/.cache/huggingface/` | Whisper model caches |

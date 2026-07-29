@@ -11,9 +11,14 @@ if [ ! -d "$VENV_DIR" ]; then
     echo "Creating virtual environment..."
     python3 -m venv "$VENV_DIR"
     source "$VENV_DIR/bin/activate"
-    pip install -q faster-whisper sounddevice pynput pyperclip pyobjc numpy
+    pip install -q faster-whisper mlx-whisper sounddevice pynput pyperclip pyobjc numpy
 else
     source "$VENV_DIR/bin/activate"
+fi
+
+# Existing installations may predate the Apple-Silicon backend.
+if ! python3 -c "import importlib.util; raise SystemExit(importlib.util.find_spec('mlx_whisper') is None)"; then
+    pip install -q mlx-whisper
 fi
 
 # Use the venv's real (framework) interpreter — required for the menubar icon

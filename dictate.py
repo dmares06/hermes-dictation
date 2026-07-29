@@ -15,18 +15,15 @@ Usage:
 import os
 import sys
 import time
-import tempfile
-import wave
 import threading
 import re
 import signal
-import queue
 import json
 import logging
-import subprocess
 import webbrowser
+import platform
 from pathlib import Path
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from typing import Optional
 
 import AVFoundation
@@ -63,13 +60,14 @@ DEFAULT_CONFIG = {
     "language": "en",            # English decoding improves accuracy and speed
     "compute_type": "int8",      # int8, float16, float32
     "device": "auto",            # auto, cpu, cuda
+    "transcription_backend": "auto",  # MLX on Apple Silicon, CPU elsewhere
     "sample_rate": 16000,
     "channels": 1,
     "silence_threshold": 0.5,
     "min_silence_ms": 500,
     "auto_punctuate": True,
     "remove_fillers": True,
-    "speed_mode": "quality",     # quality or fast
+    "speed_mode": "fast",        # fast or quality; fast is better for live dictation
     "show_window": False,        # Show a window on record (future)
     "launch_at_login": False,
 }
@@ -78,8 +76,23 @@ SAMPLE_RATE = 16000
 CHANNELS = 1
 DTYPE = "float32"
 BLOCKSIZE = 1024
-TEMP_DIR = Path(tempfile.gettempdir()) / "hermes-dictation"
-TEMP_DIR.mkdir(exist_ok=True)
+
+MLX_MODEL_REPOS = {
+    "tiny": "mlx-community/whisper-tiny.en-mlx-8bit",
+    "base": "mlx-community/whisper-base.en-mlx-8bit",
+    "small": "mlx-community/whisper-small.en-mlx-8bit",
+    "medium": "mlx-community/whisper-medium.en-mlx-8bit",
+    "large-v3": "mlx-community/whisper-large-v3-mlx-4bit",
+}
+
+
+@dataclass(frozen=True)
+class CapturedAudio:
+    """A trimmed mono waveform ready for Whisper, kept entirely in memory."""
+
+    samples: np.ndarray
+    duration: float
+
 
 HARD_FILLER_PATTERN = re.compile(
     r"\b(?:um+|uh+|ah+|er+|hmm+|mm+)\b[\s,;:]*", re.IGNORECASE
@@ -189,11 +202,15 @@ class DictationEngine:
 
     def __init__(self, config: dict):
         self.config = config
-        self.model: Optional[WhisperModel] = None
+        self.model = None
+        self.backend: Optional[str] = None
+        self.model_id: Optional[str] = None
         self.is_recording = False
         self.audio_buffer = []
         self.audio_stream: Optional[sd.InputStream] = None
         self._lock = threading.Lock()
+        self._model_lock = threading.Lock()
+        self._transcription_lock = threading.Lock()
         self._hotkey_obj = self._resolve_hotkey()
         self.store: Optional[LocalStore] = None
 
@@ -236,30 +253,92 @@ class DictationEngine:
 
     def load_model(self):
         """Load the Whisper model (once)."""
-        if self.model is not None:
+        with self._model_lock:
+            if self.model is not None:
+                return self.model
+
+            model_size = self.config.get("model_size", "small")
+            backend = self._preferred_backend()
+            log.info("Loading Whisper %s with %s...", model_size, backend)
+            start = time.perf_counter()
+
+            if backend == "mlx":
+                try:
+                    import mlx_whisper
+                    from huggingface_hub import snapshot_download
+
+                    model_id = self._mlx_model_id(model_size)
+                    try:
+                        # Resolve an existing snapshot without a network check.
+                        # On the first run, passing the repo id below lets MLX
+                        # download it normally; subsequent launches stay local.
+                        model_path = snapshot_download(
+                            repo_id=model_id,
+                            local_files_only=True,
+                        )
+                    except Exception:
+                        model_path = model_id
+                    # MLX keeps the loaded model in-process. A tiny silent warmup
+                    # downloads/loads it before the user's first dictation.
+                    mlx_whisper.transcribe(
+                        np.zeros(SAMPLE_RATE // 10, dtype=np.float32),
+                        path_or_hf_repo=model_path,
+                        language=self.config.get("language") or None,
+                        temperature=0.0,
+                        condition_on_previous_text=False,
+                        initial_prompt="Natural English dictation with ordinary punctuation.",
+                        without_timestamps=True,
+                        verbose=None,
+                    )
+                    self.model = mlx_whisper
+                    self.backend = "mlx"
+                    self.model_id = model_path
+                except Exception as exc:
+                    log.warning("MLX Whisper unavailable (%s); using faster-whisper", exc)
+
+            if self.model is None:
+                compute_type = self.config.get("compute_type", "int8")
+                device = self.config.get("device", "auto")
+                if device == "auto":
+                    device = "cpu"
+                self.model = WhisperModel(
+                    model_size,
+                    device=device,
+                    compute_type=compute_type,
+                    download_root=str(Path.home() / ".cache" / "whisper"),
+                    cpu_threads=min(4, os.cpu_count() or 4),
+                    num_workers=1,
+                )
+                self.backend = "faster-whisper"
+                self.model_id = model_size
+
+            elapsed = time.perf_counter() - start
+            log.info("Model loaded in %.1fs (backend=%s)", elapsed, self.backend)
             return self.model
 
-        model_size = self.config.get("model_size", "small")
-        compute_type = self.config.get("compute_type", "int8")
-        device = self.config.get("device", "auto")
+    def _preferred_backend(self) -> str:
+        configured = self.config.get("transcription_backend", "auto")
+        if configured in {"mlx", "faster-whisper"}:
+            return configured
+        if sys.platform == "darwin" and platform.machine() == "arm64":
+            return "mlx"
+        return "faster-whisper"
 
-        log.info(f"Loading Whisper {model_size}...")
-        start = time.time()
+    def _mlx_model_id(self, model_size: str) -> str:
+        language = self.config.get("language")
+        if model_size == "large-v3":
+            return MLX_MODEL_REPOS[model_size]
+        if language == "en":
+            return MLX_MODEL_REPOS.get(model_size, MLX_MODEL_REPOS["small"])
+        return f"mlx-community/whisper-{model_size}-mlx-8bit"
 
-        if device == "auto":
-            device = "cpu"  # faster-whisper CTranslate2 CPU is fast on Apple Silicon
-
-        self.model = WhisperModel(
-            model_size,
-            device=device,
-            compute_type=compute_type,
-            download_root=str(Path.home() / ".cache" / "whisper"),
-            cpu_threads=4,
-            num_workers=2,
-        )
-        elapsed = time.time() - start
-        log.info(f"Model loaded in {elapsed:.1f}s")
-        return self.model
+    def reset_model(self):
+        """Discard the selected backend safely before loading new settings."""
+        with self._transcription_lock:
+            with self._model_lock:
+                self.model = None
+                self.backend = None
+                self.model_id = None
 
     def start_recording(self):
         """Begin audio capture."""
@@ -270,8 +349,8 @@ class DictationEngine:
             self.is_recording = True
         log.info("🎤 Recording...")
 
-    def stop_recording(self) -> Optional[str]:
-        """End capture and return path to WAV file."""
+    def stop_recording(self) -> Optional[CapturedAudio]:
+        """End capture and return a trimmed in-memory waveform."""
         with self._lock:
             if not self.is_recording:
                 return None
@@ -297,22 +376,10 @@ class DictationEngine:
             log.info("Audio too short, skipping")
             return None
 
-        # Save to WAV
-        timestamp = int(time.time() * 1000)
-        wav_path = TEMP_DIR / f"dictation_{timestamp}.wav"
-
         if audio.dtype != np.float32:
             audio = audio.astype(np.float32)
-        audio = np.clip(audio, -1.0, 1.0)
-
-        with wave.open(str(wav_path), "wb") as wf:
-            wf.setnchannels(CHANNELS)
-            wf.setsampwidth(2)
-            wf.setframerate(SAMPLE_RATE)
-            audio_int16 = (audio * 32767).astype(np.int16)
-            wf.writeframes(audio_int16.tobytes())
-
-        return str(wav_path)
+        audio = np.clip(audio.reshape(-1), -1.0, 1.0)
+        return CapturedAudio(samples=audio, duration=len(audio) / SAMPLE_RATE)
 
     def _trim_silence(self, audio: np.ndarray, threshold: float = 0.01) -> np.ndarray:
         """Trim silence from beginning and end of audio."""
@@ -325,35 +392,60 @@ class DictationEngine:
         end = min(len(audio), above_threshold[-1] + SAMPLE_RATE // 20)
         return audio[start:end]
 
-    def transcribe(self, audio_path: str) -> str:
-        """Transcribe audio file to text."""
+    def transcribe(self, audio: np.ndarray) -> str:
+        """Transcribe an in-memory 16 kHz mono waveform."""
+        # The decoder/model is shared by all hotkey cycles. Serializing final
+        # inference prevents rapid dictations from fighting for CPU/GPU time.
+        with self._transcription_lock:
+            return self._transcribe(audio)
+
+    def _transcribe(self, audio: np.ndarray) -> str:
         model = self.load_model()
-        log.info("Transcribing...")
-        start = time.time()
+        log.info("Transcribing with %s...", self.backend)
+        start = time.perf_counter()
 
         fast_mode = self.config.get("speed_mode", "quality") == "fast"
-        segments, info = model.transcribe(
-            audio_path,
-            beam_size=1 if fast_mode else 5,
-            best_of=1 if fast_mode else 5,
-            temperature=0.0,
-            language=self.config.get("language") or None,
-            initial_prompt="Natural English dictation with ordinary punctuation.",
-            condition_on_previous_text=False,
-            vad_filter=True,
-            vad_parameters=dict(
-                min_silence_duration_ms=self.config.get("min_silence_ms", 500),
-                threshold=self.config.get("silence_threshold", 0.5),
-            ),
+        if self.backend == "mlx":
+            options = {
+                "path_or_hf_repo": self.model_id,
+                "language": self.config.get("language") or None,
+                "temperature": 0.0 if fast_mode else (0.0, 0.2, 0.4, 0.6),
+                "condition_on_previous_text": False,
+                "initial_prompt": "Natural English dictation with ordinary punctuation.",
+                "without_timestamps": True,
+                "verbose": None,
+            }
+            if not fast_mode:
+                options["beam_size"] = 5
+            result = model.transcribe(audio, **options)
+            text = result.get("text", "").strip()
+        else:
+            segments, _ = model.transcribe(
+                audio,
+                beam_size=1 if fast_mode else 5,
+                best_of=1 if fast_mode else 5,
+                temperature=0.0,
+                language=self.config.get("language") or None,
+                initial_prompt="Natural English dictation with ordinary punctuation.",
+                condition_on_previous_text=False,
+                # Hermes only needs final text; timestamp decoding adds work with
+                # no benefit for cursor insertion.
+                without_timestamps=True,
+                vad_filter=True,
+                vad_parameters=dict(
+                    min_silence_duration_ms=self.config.get("min_silence_ms", 500),
+                    threshold=self.config.get("silence_threshold", 0.5),
+                ),
+            )
+            text = " ".join(segment.text.strip() for segment in segments)
+
+        elapsed = time.perf_counter() - start
+        audio_seconds = len(audio) / SAMPLE_RATE
+        realtime_factor = elapsed / max(audio_seconds, 0.001)
+        log.info(
+            "Transcribed %d chars in %.2fs (%.2fx realtime, backend=%s)",
+            len(text), elapsed, realtime_factor, self.backend,
         )
-
-        text_parts = []
-        for segment in segments:
-            text_parts.append(segment.text.strip())
-
-        text = " ".join(text_parts)
-        elapsed = time.time() - start
-        log.info(f"Transcribed {len(text)} chars in {elapsed:.2f}s")
         return text
 
     def clean_text(self, text: str) -> str:
@@ -382,7 +474,11 @@ class DictationEngine:
             Quartz.CGEventSetFlags(key_up, Quartz.kCGEventFlagMaskCommand)
             Quartz.CGEventPost(Quartz.kCGHIDEventTap, key_up)
 
-            time.sleep(0.05)
+            # Some apps process the paste event asynchronously. Restoring the
+            # clipboard after only 50ms can race that event and cause the
+            # previous clipboard contents to be inserted instead of the
+            # transcript. Give the target app time to consume our text first.
+            time.sleep(0.25)
             pyperclip.copy(saved)
 
             log.info(f"✏️  \"{text[:60]}{'...' if len(text) > 60 else ''}\"")
@@ -390,16 +486,10 @@ class DictationEngine:
         except Exception as e:
             log.error(f"Failed to type: {e}")
 
-    def process_audio(self, audio_path: str):
+    def process_audio(self, capture: CapturedAudio):
         """Full pipeline: transcribe → clean → snippet/type → save history."""
         try:
-            duration = 0.0
-            try:
-                with wave.open(audio_path, "rb") as audio_file:
-                    duration = audio_file.getnframes() / max(1, audio_file.getframerate())
-            except Exception:
-                pass
-            raw = self.transcribe(audio_path)
+            raw = self.transcribe(capture.samples)
             if not raw:
                 log.info("No speech detected")
                 return
@@ -409,7 +499,7 @@ class DictationEngine:
             log.info(f"Clean: \"{cleaned}\"")
 
             if self.store is not None:
-                self.store.add_transcript(cleaned, raw, duration)
+                self.store.add_transcript(cleaned, raw, capture.duration)
                 snippet = self.store.resolve_snippet(cleaned)
             else:
                 snippet = None
@@ -430,11 +520,6 @@ class DictationEngine:
             log.error(f"Processing failed: {e}")
             import traceback
             traceback.print_exc()
-        finally:
-            try:
-                os.unlink(audio_path)
-            except Exception:
-                pass
 
 
 # ── macOS Menubar App ────────────────────────────────────────────────────────
@@ -560,6 +645,11 @@ class AppDelegate(NSObject):
         if self.hub is not None:
             self.hub.start()
         self.start_engine()
+        if self.hub is not None:
+            # The Hub is the app's home screen. Open it after the menubar
+            # process is ready so the browser can be bookmarked at the stable
+            # local address.
+            threading.Thread(target=self.hub.open, name="open-hermes-hub", daemon=True).start()
 
     def setup_menubar(self):
         """Create the macOS menubar status item."""
@@ -576,6 +666,8 @@ class AppDelegate(NSObject):
         self.status_item.setVisible_(True)
         self.showIdleIcon()
         button = self.status_item.button()
+        if button is not None:
+            button.setToolTip_("Hermes Dictation — Ready")
         log.info(
             f"Menubar status item created: button={button is not None}, "
             f"image={button.image() is not None if button else 'n/a'}, "
@@ -675,9 +767,13 @@ class AppDelegate(NSObject):
 
     def showIdleIcon(self):
         self._apply_icon("mic", False)
+        if self.status_item is not None and self.status_item.button() is not None:
+            self.status_item.button().setToolTip_("Hermes Dictation — Ready")
 
     def showRecordingIcon(self):
         self._apply_icon("mic.fill", True)
+        if self.status_item is not None and self.status_item.button() is not None:
+            self.status_item.button().setToolTip_("Hermes Dictation — Listening")
 
     def set_recording_icon(self, recording):
         """Update the icon from any thread (UI work marshaled to main thread)."""
@@ -753,12 +849,12 @@ class AppDelegate(NSObject):
                     self.set_listening(True)
                     engine.start_recording()
                     release_event.wait()
-                    audio_path = engine.stop_recording()
+                    capture = engine.stop_recording()
                     self.set_recording_icon(False)
-                    if audio_path:
+                    if capture:
                         self.set_transcribing(True)
                         try:
-                            engine.process_audio(audio_path)
+                            engine.process_audio(capture)
                         finally:
                             self.set_transcribing(False)
                     else:
@@ -784,7 +880,7 @@ class AppDelegate(NSObject):
         model_size = sender.representedObject()
         log.info(f"Changing model to {model_size}")
         self.engine.config["model_size"] = model_size
-        self.engine.model = None  # Force reload
+        self.engine.reset_model()
         threading.Thread(target=self.engine.load_model, daemon=True).start()
 
         # Update menu state
@@ -860,7 +956,7 @@ class AppDelegate(NSObject):
             label = "Fn / Globe" if changed["hotkey"] == "fn" else changed["hotkey"]
             self.ready_status_title = f"Ready - Hold {label}"
         if changed.get("model_size") and changed["model_size"] != old_model:
-            self.engine.model = None
+            self.engine.reset_model()
             threading.Thread(target=self.engine.load_model, daemon=True).start()
         if "paused" in changed:
             self.paused = bool(changed["paused"])
