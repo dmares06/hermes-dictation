@@ -48,6 +48,7 @@ from AppKit import (
 from Foundation import NSObject, NSLog, NSMakeRect, NSMakePoint
 from hermes_store import LocalStore
 from hermes_hub import HubServer
+from hermes_indicator import IndicatorActivity
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 CONFIG_DIR = Path.home() / ".config" / "hermes-dictation"
@@ -540,7 +541,7 @@ class TranscriptionIndicatorView(NSView):
         dot_color.setFill()
         dot_sizes = [2, 3, 4, 3, 2, 3, 4]
         for index, dot_height in enumerate(dot_sizes):
-            x = 22 + index * 7
+            x = 18 + index * 6
             y = (bounds.size.height - dot_height) / 2
             NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(x, y, 4, dot_height)).fill()
 
@@ -549,7 +550,7 @@ class TranscriptionIndicator(NSPanel):
     """Borderless, non-interactive transcription status panel."""
 
     def init(self):
-        frame = NSMakeRect(0, 0, 240, 54)
+        frame = NSMakeRect(0, 0, 210, 46)
         self = objc.super(TranscriptionIndicator, self).initWithContentRect_styleMask_backing_defer_(
             frame,
             NSWindowStyleMaskBorderless,
@@ -571,17 +572,17 @@ class TranscriptionIndicator(NSPanel):
             content = TranscriptionIndicatorView.alloc().initWithFrame_(frame)
             self.setContentView_(content)
 
-            label = NSTextField.alloc().initWithFrame_(NSMakeRect(70, 16, 110, 22))
+            label = NSTextField.alloc().initWithFrame_(NSMakeRect(62, 12, 104, 22))
             label.setStringValue_("Listening")
             label.setBezeled_(False)
             label.setDrawsBackground_(False)
             label.setEditable_(False)
             label.setSelectable_(False)
             label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(0.82, 1.0))
-            label.setFont_(NSFont.systemFontOfSize_(12))
+            label.setFont_(NSFont.systemFontOfSize_(11))
             content.addSubview_(label)
 
-            spinner = NSProgressIndicator.alloc().initWithFrame_(NSMakeRect(198, 15, 24, 24))
+            spinner = NSProgressIndicator.alloc().initWithFrame_(NSMakeRect(176, 12, 22, 22))
             spinner.setStyle_(NSProgressIndicatorStyleSpinning)
             spinner.setControlSize_(NSControlSizeSmall)
             spinner.setIndeterminate_(True)
@@ -599,7 +600,7 @@ class TranscriptionIndicator(NSPanel):
         screen = NSScreen.mainScreen()
         if screen is not None:
             visible = screen.visibleFrame()
-            width, height = 240, 54
+            width, height = 210, 46
             x = visible.origin.x + (visible.size.width - width) / 2
             y = visible.origin.y + 64
             self.setFrameOrigin_(NSMakePoint(x, y))
@@ -620,7 +621,7 @@ class AppDelegate(NSObject):
             self.status_item = None
             self.menu = None
             self.status_icon = None
-            self.listening = False
+            self.indicator_activity = IndicatorActivity()
             self.transcription_indicator = None
             self.ready_status_title = "Ready - Hold Fn / Globe"
             self.store = None
@@ -783,18 +784,31 @@ class AppDelegate(NSObject):
         )
 
     def showTranscribing(self):
-        if self.transcription_indicator is not None:
-            self.transcription_indicator.show("transcribing")
-        if self.status_indicator is not None:
-            self.status_indicator.setTitle_("Transcribing…")
+        self.indicator_activity.begin_transcribing()
+        self.refreshIndicator()
 
     def showListening(self):
-        if self.transcription_indicator is not None:
-            self.transcription_indicator.show("listening")
-        if self.status_indicator is not None:
-            self.status_indicator.setTitle_("Listening… Release to transcribe")
+        self.indicator_activity.begin_listening()
+        self.refreshIndicator()
 
     def hideTranscribing(self):
+        self.indicator_activity.end_transcribing()
+        self.refreshIndicator()
+
+    def hideListening(self):
+        self.indicator_activity.end_listening()
+        self.refreshIndicator()
+
+    def refreshIndicator(self):
+        state = self.indicator_activity.state
+        if state is not None:
+            if self.transcription_indicator is not None:
+                self.transcription_indicator.show(state)
+            if self.status_indicator is not None:
+                title = "Listening… Release to transcribe" if state == "listening" else "Transcribing…"
+                self.status_indicator.setTitle_(title)
+            return
+
         if self.transcription_indicator is not None:
             self.transcription_indicator.hide()
         if self.status_indicator is not None:
@@ -809,7 +823,7 @@ class AppDelegate(NSObject):
 
     def set_listening(self, listening):
         """Show the indicator as soon as recording begins."""
-        selector = "showListening" if listening else "hideTranscribing"
+        selector = "showListening" if listening else "hideListening"
         self.performSelectorOnMainThread_withObject_waitUntilDone_(
             selector, None, False
         )
