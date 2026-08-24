@@ -62,24 +62,17 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func openRecorder() {
-        switch BackgroundDictationState.phase() {
-        case .recording:
+        switch KeyboardHandoffGuidance.recorderAction(for: BackgroundDictationState.phase()) {
+        case .requestStop:
             BackgroundDictationState.requestStop()
             keyboardState.handoffStatus = "Stopping…"
-        case .transcribing:
+        case .showTranscribing:
             keyboardState.handoffStatus = "Transcribing on this iPhone…"
-        case .failed:
+        case .showFailure:
             keyboardState.handoffStatus = BackgroundDictationState.sharedDefaults?
                 .string(forKey: BackgroundDictationState.Keys.errorMessage) ?? "Dictation failed. Try your Action Button again."
-        case .idle, .ready:
-            guard let url = URL(string: "whisperdict://record") else { return }
-            keyboardState.handoffStatus = "Opening WhisperDict…"
-            extensionContext?.open(url) { [weak self] opened in
-                guard !opened else { return }
-                Task { @MainActor [weak self] in
-                    self?.keyboardState.handoffStatus = "Press your iPhone Action Button to open WhisperDict and record."
-                }
-            }
+        case .showActionButtonGuidance:
+            keyboardState.handoffStatus = "Press your iPhone Action Button to open WhisperDict and record."
         }
         refreshBackgroundSession()
     }

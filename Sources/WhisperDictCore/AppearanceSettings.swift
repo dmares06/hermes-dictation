@@ -1,10 +1,34 @@
 import Foundation
 
+public enum KeyboardRecorderAction: Equatable, Sendable {
+    case requestStop
+    case showTranscribing
+    case showFailure
+    case showActionButtonGuidance
+}
+
 public enum KeyboardHandoffGuidance {
     public static func idleMessage(hasFullAccess: Bool) -> String {
         hasFullAccess
             ? "Press your iPhone Action Button to record and insert"
             : "Turn on Full Access for WhisperDict in Settings to insert recordings here"
+    }
+
+    public static func recorderAction(for phase: BackgroundDictationPhase) -> KeyboardRecorderAction {
+        switch phase {
+        case .recording: .requestStop
+        case .transcribing: .showTranscribing
+        case .failed: .showFailure
+        case .idle, .ready: .showActionButtonGuidance
+        }
+    }
+
+    public static func recorderButtonTitle(for phase: BackgroundDictationPhase) -> String {
+        switch phase {
+        case .recording: "Stop"
+        case .transcribing: "Working"
+        case .idle, .ready, .failed: "Action Button"
+        }
     }
 }
 

@@ -9,10 +9,10 @@ struct SetupGuideView: View {
                 GuideRow(number: 3, title: "Copy or insert", detail: "Copy the result, or use the WhisperDict keyboard’s Insert Latest button in another app.")
             }
             Section("Start while typing") {
-                GuideRow(number: 1, title: "Tap Record", detail: "In any text field, switch to the WhisperDict keyboard and tap Record. iOS briefly opens WhisperDict so the app—not the keyboard—can access the microphone.")
-                GuideRow(number: 2, title: "Swipe back and speak", detail: "Swipe back to the app where you were typing. WhisperDict continues recording in the background.")
-                GuideRow(number: 3, title: "Stop and insert", detail: "Tap Stop on the keyboard. WhisperDict transcribes on this iPhone and inserts the result into the active text field.")
-                GuideRow(number: 4, title: "Optional Action Button", detail: "For a faster start, assign WhisperDict’s Start Dictation shortcut to the Action Button. Press it again, tap Stop on the keyboard, or use the Live Activity to finish.")
+                GuideRow(number: 1, title: "Assign the Action Button", detail: "In Settings → Action Button → Shortcut, choose WhisperDict’s Start Dictation shortcut.")
+                GuideRow(number: 2, title: "Press and speak", detail: "Press the Action Button while typing. WhisperDict opens so the app—not the keyboard—can access the microphone.")
+                GuideRow(number: 3, title: "Stop recording", detail: "Press the Action Button again, tap Stop after returning to the keyboard, or use the Live Activity Stop control.")
+                GuideRow(number: 4, title: "Insert the result", detail: "Return to the text field, choose the WhisperDict keyboard, and tap Insert Latest. Review the text before sending.")
             }
             Section("Enable the fallback keyboard") {
                 GuideRow(number: 1, title: "Open Settings", detail: "Go to Settings → General → Keyboard → Keyboards.")
@@ -21,7 +21,7 @@ struct SetupGuideView: View {
                 GuideRow(number: 4, title: "Switch keyboards", detail: "Touch and hold the globe key in any supported text field and choose WhisperDict.")
             }
             Section("Important iOS limitation") {
-                Text("Apple does not permit third-party keyboards to use the microphone. Tapping Record therefore opens WhisperDict to begin recording, just like other iPhone dictation keyboards. The Action Button, Siri, or Shortcuts can start the Apple-approved background intent without that handoff. Secure fields and apps that block custom keyboards always use Apple’s keyboard.")
+                Text("Apple does not permit third-party keyboards to use the microphone or launch WhisperDict through its private URL scheme. Start recording with the Action Button, Siri, or the Start Dictation shortcut; the keyboard only stops an active recording and inserts the finished transcript. Secure fields and apps that block custom keyboards always use Apple’s keyboard.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

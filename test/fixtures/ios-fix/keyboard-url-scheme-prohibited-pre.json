@@ -1,0 +1,13 @@
+{
+  "bug": "keyboard-url-scheme-prohibited",
+  "source": "physical iPhone keyboard extension",
+  "trigger": "Tap Record while the shared dictation phase is idle or ready",
+  "observed": {
+    "attemptedURL": "whisperdict://record",
+    "systemMessage": "The provided URL scheme 'whisperdict' is unsupported; launch is prohibited"
+  },
+  "expected": {
+    "keyboardBehavior": "Show Action Button guidance without attempting to launch a URL",
+    "recordingEntryPoint": "Start Dictation App Shortcut or assigned Action Button"
+  }
+}

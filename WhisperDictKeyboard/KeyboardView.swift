@@ -44,7 +44,7 @@ struct KeyboardView: View {
                     .buttonStyle(.plain)
                     .accessibilityHint("Inserts the most recent transcript created in WhisperDict")
                 } else {
-                    Text(state.handoffStatus ?? "Tap Record to dictate privately")
+                    Text(state.handoffStatus ?? "Press your Action Button to dictate privately")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
@@ -93,11 +93,7 @@ struct KeyboardView: View {
     }
 
     private var recordButtonTitle: String {
-        switch state.backgroundPhase {
-        case .recording: "Stop"
-        case .transcribing: "Working"
-        case .idle, .ready, .failed: "Record"
-        }
+        KeyboardHandoffGuidance.recorderButtonTitle(for: state.backgroundPhase)
     }
 
     private var recordButtonIcon: String {

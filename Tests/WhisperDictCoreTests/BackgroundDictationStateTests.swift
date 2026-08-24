@@ -135,6 +135,35 @@ final class BackgroundDictationStateTests: XCTestCase {
 }
 
 final class KeyboardHandoffGuidanceTests: XCTestCase {
+    func testIdleKeyboardUsesActionButtonInsteadOfAProhibitedURLLaunch() {
+        XCTAssertEqual(
+            KeyboardHandoffGuidance.recorderAction(for: .idle),
+            .showActionButtonGuidance
+        )
+        XCTAssertEqual(
+            KeyboardHandoffGuidance.recorderAction(for: .ready),
+            .showActionButtonGuidance
+        )
+    }
+
+    func testActiveKeyboardRecordingCanStillRequestStop() {
+        XCTAssertEqual(
+            KeyboardHandoffGuidance.recorderAction(for: .recording),
+            .requestStop
+        )
+    }
+
+    func testIdleRecordControlNamesTheSupportedActionButtonEntryPoint() {
+        XCTAssertEqual(
+            KeyboardHandoffGuidance.recorderButtonTitle(for: .idle),
+            "Action Button"
+        )
+        XCTAssertEqual(
+            KeyboardHandoffGuidance.recorderButtonTitle(for: .recording),
+            "Stop"
+        )
+    }
+
     func testMissingFullAccessExplainsWhyInsertionCannotWork() {
         XCTAssertEqual(
             KeyboardHandoffGuidance.idleMessage(hasFullAccess: false),
