@@ -1,5 +1,13 @@
 import Foundation
 
+public enum KeyboardHandoffGuidance {
+    public static func idleMessage(hasFullAccess: Bool) -> String {
+        hasFullAccess
+            ? "Press your iPhone Action Button to record and insert"
+            : "Turn on Full Access for WhisperDict in Settings to insert recordings here"
+    }
+}
+
 public struct AppearanceColor: Equatable, Sendable {
     public static let defaultKeyboard = AppearanceColor(hex: "#5AC8FA")!
     public static let defaultRecordButton = AppearanceColor(hex: "#00C7BE")!

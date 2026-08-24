@@ -1,4 +1,10 @@
 import SwiftUI
+import MessageUI
+
+struct MessageComposePayload: Identifiable {
+    let id = UUID()
+    let body: String
+}
 
 struct ContentView: View {
     private enum RootTab: Hashable {
@@ -13,6 +19,7 @@ struct ContentView: View {
     @State private var agent = VoiceAgentController()
     @State private var copiedText = ""
     @State private var selectedTab: RootTab = .dictation
+    @State private var messagePayload: MessageComposePayload?
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -57,6 +64,9 @@ struct ContentView: View {
                 await dictation.startFromKeyboard(settings: settings)
             }
         }
+        .sheet(item: $messagePayload) { payload in
+            MessageComposeView(body: payload.body)
+        }
     }
 
     private var dictationView: some View {
@@ -79,7 +89,10 @@ struct ContentView: View {
                             transcript: dictation.transcript,
                             interrupted: dictation.wasInterrupted,
                             copied: copiedText == dictation.transcript,
-                            copyAction: { copy(dictation.transcript) }
+                            copyAction: { copy(dictation.transcript) },
+                            messageAction: {
+                                messagePayload = MessageComposePayload(body: dictation.transcript)
+                            }
                         )
                     }
 
@@ -265,6 +278,7 @@ private struct TranscriptCard: View {
     let interrupted: Bool
     let copied: Bool
     let copyAction: () -> Void
+    let messageAction: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -272,8 +286,11 @@ private struct TranscriptCard: View {
                 Label("Latest transcript", systemImage: "text.quote")
                     .font(.headline)
                 Spacer()
-                Button(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc", action: copyAction)
-                    .font(.subheadline.weight(.semibold))
+                HStack(spacing: 12) {
+                    Button("Message", systemImage: "message.fill", action: messageAction)
+                    Button(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc", action: copyAction)
+                }
+                .font(.subheadline.weight(.semibold))
             }
             Text(transcript)
                 .font(.body)
@@ -287,6 +304,35 @@ private struct TranscriptCard: View {
         }
         .padding()
         .background(.background, in: RoundedRectangle(cornerRadius: 18))
+    }
+}
+
+struct MessageComposeView: UIViewControllerRepresentable {
+    let body: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        guard MFMessageComposeViewController.canSendText() else {
+            return UIActivityViewController(activityItems: [body], applicationActivities: nil)
+        }
+        let controller = MFMessageComposeViewController()
+        controller.body = body
+        controller.messageComposeDelegate = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
+
+    final class Coordinator: NSObject, MFMessageComposeViewControllerDelegate {
+        func messageComposeViewController(
+            _ controller: MFMessageComposeViewController,
+            didFinishWith result: MessageComposeResult
+        ) {
+            controller.dismiss(animated: true)
+        }
     }
 }
 

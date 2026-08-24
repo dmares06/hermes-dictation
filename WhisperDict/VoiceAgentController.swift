@@ -34,7 +34,7 @@ final class VoiceAgentController {
     private(set) var messages = [
         VoiceAgentMessage(
             role: .hermes,
-            text: "Tell me to compose an email, create a note, open Gmail, or open Settings."
+            text: "Tell me to send a message, compose an email, create a note, open Gmail, or open Settings."
         ),
     ]
     private(set) var audioLevel: Float = 0
@@ -43,6 +43,7 @@ final class VoiceAgentController {
     private(set) var conversationActive = false
     var showsMicrophoneSettings = false
     var sharePayload: VoiceAgentSharePayload?
+    var messagePayload: MessageComposePayload?
 
     private let recorder: DictationAudioRecorder
     private let transcriber: DictationTranscriber
@@ -199,7 +200,7 @@ final class VoiceAgentController {
         do {
             let rawText = try await transcriber.transcribe(audioURL: audioURL, modelPath: modelPath)
             guard conversationActive, conversationID == expectedConversationID else { return }
-            let collectsProse = session.step == .collectingEmailBody || session.step == .collectingNote
+            let collectsProse = session.step.collectsProse
             let options = TranscriptCleanupOptions(
                 removeFillers: settings.removeFillers,
                 autoPunctuate: collectsProse && settings.autoPunctuate,
@@ -308,6 +309,8 @@ final class VoiceAgentController {
             await open(url, failureMessage: "I couldn't open your default mail app. Check that a mail app is configured.")
         case .shareNote(let text):
             sharePayload = VoiceAgentSharePayload(text: text)
+        case .composeMessage(let text):
+            messagePayload = MessageComposePayload(body: text)
         case .open(.gmailWeb):
             guard let url = URL(string: "https://mail.google.com/") else { return }
             await open(url, failureMessage: "I couldn't open Gmail in your browser.")
@@ -359,6 +362,7 @@ final class VoiceAgentController {
 @MainActor
 private final class VoiceAgentSpeaker: NSObject, AVSpeechSynthesizerDelegate {
     private let synthesizer = AVSpeechSynthesizer()
+    private let audioSession = AVAudioSession.sharedInstance()
     private var continuation: CheckedContinuation<Void, Never>?
     private var utterance: AVSpeechUtterance?
 
@@ -369,6 +373,12 @@ private final class VoiceAgentSpeaker: NSObject, AVSpeechSynthesizerDelegate {
 
     func speak(_ text: String) async {
         stop()
+        do {
+            try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+            try audioSession.setActive(true)
+        } catch {
+            NSLog("WhisperDict speech audio setup failed: \(error.localizedDescription)")
+        }
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         utterance.voice = AVSpeechSynthesisVoice(language: Locale.current.language.languageCode?.identifier ?? "en-US")
@@ -387,6 +397,7 @@ private final class VoiceAgentSpeaker: NSObject, AVSpeechSynthesizerDelegate {
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
+        try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
@@ -402,5 +413,6 @@ private final class VoiceAgentSpeaker: NSObject, AVSpeechSynthesizerDelegate {
         utterance = nil
         continuation?.resume()
         continuation = nil
+        try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
     }
 }

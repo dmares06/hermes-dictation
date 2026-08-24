@@ -62,6 +62,9 @@ struct VoiceAgentView: View {
             .sheet(item: $controller.sharePayload) { payload in
                 ActivityView(items: [payload.text])
             }
+            .sheet(item: $controller.messagePayload) { payload in
+                MessageComposeView(body: payload.body)
+            }
         }
     }
 
@@ -249,6 +252,8 @@ private struct PendingActionCard: View {
             detail("Body", draft.body)
         case .shareNote(let text):
             detail("Note", text)
+        case .composeMessage(let text):
+            detail("Message", text)
         case .open(.gmailWeb):
             detail("Destination", "Gmail in your browser")
         case .open(.appSettings):
@@ -267,6 +272,7 @@ private struct PendingActionCard: View {
         switch action {
         case .composeEmail: "Open email draft"
         case .shareNote: "Share note"
+        case .composeMessage: "Open message draft"
         case .open(.gmailWeb): "Open Gmail"
         case .open(.appSettings): "Open Settings"
         }
@@ -297,6 +303,7 @@ private struct QuickRequests: View {
     private var buttons: some View {
         quickButton("Compose email", request: "Compose an email")
         quickButton("Create note", request: "Create a note")
+        quickButton("Send message", request: "Send a message")
         quickButton("Open Gmail", request: "Open Gmail")
     }
 

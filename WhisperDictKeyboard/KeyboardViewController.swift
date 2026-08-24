@@ -55,6 +55,10 @@ final class KeyboardViewController: UIInputViewController {
         keyboardState.keyboardColor = appearanceStore.keyboardColor
         keyboardState.recordButtonColor = appearanceStore.recordButtonColor
         refreshBackgroundSession()
+        if keyboardState.handoffStatus == nil,
+           keyboardState.backgroundPhase == .idle || keyboardState.backgroundPhase == .ready {
+            keyboardState.handoffStatus = KeyboardHandoffGuidance.idleMessage(hasFullAccess: hasFullAccess)
+        }
     }
 
     private func openRecorder() {

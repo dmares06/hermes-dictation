@@ -5,6 +5,7 @@ public enum VoiceAgentLimits {
     public static let emailSubject = 200
     public static let emailBody = 4_000
     public static let note = 8_000
+    public static let message = 4_000
 }
 
 public struct EmailAddress: Equatable, Sendable {
@@ -75,6 +76,7 @@ public enum VoiceAgentAction: Equatable, Sendable {
     case open(VoiceAgentDestination)
     case composeEmail(EmailDraft)
     case shareNote(String)
+    case composeMessage(String)
 
     public var reviewTitle: String {
         switch self {
@@ -82,6 +84,7 @@ public enum VoiceAgentAction: Equatable, Sendable {
         case .open(.appSettings): "Open Settings"
         case .composeEmail: "Email draft"
         case .shareNote: "Note"
+        case .composeMessage: "Message draft"
         }
     }
 }
@@ -92,7 +95,17 @@ public enum VoiceAgentStep: Equatable, Sendable {
     case collectingEmailSubject
     case collectingEmailBody
     case collectingNote
+    case collectingMessage
     case awaitingConfirmation
+
+    public var collectsProse: Bool {
+        switch self {
+        case .collectingEmailBody, .collectingNote, .collectingMessage:
+            true
+        case .idle, .collectingEmailRecipient, .collectingEmailSubject, .awaitingConfirmation:
+            false
+        }
+    }
 }
 
 public struct VoiceAgentTurn: Equatable, Sendable {
@@ -112,6 +125,7 @@ public struct VoiceAgentSession: Sendable {
         case emailSubject(recipient: String)
         case emailBody(recipient: String, subject: String)
         case note
+        case message
         case confirmation(VoiceAgentAction)
     }
 
@@ -126,6 +140,7 @@ public struct VoiceAgentSession: Sendable {
         case .emailSubject: .collectingEmailSubject
         case .emailBody: .collectingEmailBody
         case .note: .collectingNote
+        case .message: .collectingMessage
         case .confirmation: .awaitingConfirmation
         }
     }
@@ -165,6 +180,8 @@ public struct VoiceAgentSession: Sendable {
             return collectEmailBody(value, recipient: recipient, subject: subject)
         case .note:
             return collectNote(value)
+        case .message:
+            return collectMessage(value)
         case .confirmation:
             return VoiceAgentTurn(
                 assistantMessage: "The action is still waiting for your approval. Say confirm, tap the action button, or cancel."
@@ -184,6 +201,8 @@ public struct VoiceAgentSession: Sendable {
             message = "Opening your email draft. Review it there and choose Send when you are ready."
         case .shareNote:
             message = "Opening the share sheet. Choose Notes, then save it there."
+        case .composeMessage:
+            message = "Opening a message draft. Choose the recipient, review it, and tap Send when you are ready."
         case .open(.gmailWeb):
             message = "Opening Gmail in your browser."
         case .open(.appSettings):
@@ -204,6 +223,10 @@ public struct VoiceAgentSession: Sendable {
         if Self.containsAny(intent, phrases: ["compose email", "compose an email", "write email", "write an email", "draft email", "draft an email", "send email", "send an email", "open compose"]) {
             state = .emailRecipient
             return VoiceAgentTurn(assistantMessage: "Who is the email for?")
+        }
+        if Self.containsAny(intent, phrases: ["send a message", "send message", "write a message", "write message", "text someone", "send a text", "text a message"]) {
+            state = .message
+            return VoiceAgentTurn(assistantMessage: "What should the message say?")
         }
         if intent.contains("note"),
            Self.containsAny(intent, phrases: ["are you able", "can you save", "save that", "save it", "in my notes app"]) {
@@ -234,7 +257,7 @@ public struct VoiceAgentSession: Sendable {
         }
 
         return VoiceAgentTurn(
-            assistantMessage: "I can't do that safely yet. Try compose an email, create a note, open Gmail, or open Settings."
+            assistantMessage: "I can't do that safely yet. Try send a message, compose an email, create a note, open Gmail, or open Settings."
         )
     }
 
@@ -277,6 +300,17 @@ public struct VoiceAgentSession: Sendable {
         state = .confirmation(action)
         return VoiceAgentTurn(
             assistantMessage: "Your note is ready. Say confirm to open the share sheet, then choose Notes."
+        )
+    }
+
+    private mutating func collectMessage(_ value: String) -> VoiceAgentTurn {
+        guard value.count <= VoiceAgentLimits.message else {
+            return VoiceAgentTurn(assistantMessage: "That message is too long. Please keep it under 4,000 characters.")
+        }
+        let action = VoiceAgentAction.composeMessage(value)
+        state = .confirmation(action)
+        return VoiceAgentTurn(
+            assistantMessage: "Your message is ready. Say confirm to choose the recipient and review it, or cancel."
         )
     }
 

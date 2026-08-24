@@ -78,3 +78,19 @@ final class BackgroundDictationStateTests: XCTestCase {
         XCTAssertNil(defaults.string(forKey: BackgroundDictationState.Keys.errorMessage))
     }
 }
+
+final class KeyboardHandoffGuidanceTests: XCTestCase {
+    func testMissingFullAccessExplainsWhyInsertionCannotWork() {
+        XCTAssertEqual(
+            KeyboardHandoffGuidance.idleMessage(hasFullAccess: false),
+            "Turn on Full Access for WhisperDict in Settings to insert recordings here"
+        )
+    }
+
+    func testReadyKeyboardExplainsTheActionButtonFlow() {
+        XCTAssertEqual(
+            KeyboardHandoffGuidance.idleMessage(hasFullAccess: true),
+            "Press your iPhone Action Button to record and insert"
+        )
+    }
+}

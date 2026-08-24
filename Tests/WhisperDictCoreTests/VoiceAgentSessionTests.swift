@@ -115,6 +115,48 @@ final class VoiceAgentSessionTests: XCTestCase {
         XCTAssertEqual(response.assistantMessage, "I can help create a note. What should it say?")
     }
 
+    func testMessageFlowCollectsBodyThenRequiresConfirmation() {
+        var session = VoiceAgentSession()
+
+        XCTAssertEqual(session.receive("Send a message").assistantMessage, "What should the message say?")
+        XCTAssertEqual(session.step, .collectingMessage)
+
+        let review = session.receive("I am running ten minutes late")
+        XCTAssertEqual(session.step, .awaitingConfirmation)
+        XCTAssertEqual(review.action, nil)
+        XCTAssertEqual(
+            session.pendingAction,
+            .composeMessage("I am running ten minutes late")
+        )
+        XCTAssertTrue(review.assistantMessage.contains("choose the recipient"))
+
+        let confirmed = session.receive("confirm")
+        XCTAssertEqual(
+            confirmed.action,
+            .composeMessage("I am running ten minutes late")
+        )
+        XCTAssertEqual(session.step, .idle)
+    }
+
+    func testMessageBodyLimitIsEnforced() {
+        var session = VoiceAgentSession()
+        _ = session.receive("Text someone")
+
+        let response = session.receive(String(repeating: "a", count: VoiceAgentLimits.message + 1))
+
+        XCTAssertEqual(session.step, .collectingMessage)
+        XCTAssertNil(response.action)
+        XCTAssertTrue(response.assistantMessage.contains("too long"))
+    }
+
+    func testOnlyProseCollectionStepsEnableProseCleanup() {
+        XCTAssertTrue(VoiceAgentStep.collectingMessage.collectsProse)
+        XCTAssertTrue(VoiceAgentStep.collectingEmailBody.collectsProse)
+        XCTAssertTrue(VoiceAgentStep.collectingNote.collectsProse)
+        XCTAssertFalse(VoiceAgentStep.collectingEmailRecipient.collectsProse)
+        XCTAssertFalse(VoiceAgentStep.awaitingConfirmation.collectsProse)
+    }
+
     func testNotesCapabilityQuestionExplainsTheRequiredSystemHandoff() {
         var session = VoiceAgentSession()
 
