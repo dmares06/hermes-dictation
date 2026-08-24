@@ -2,7 +2,7 @@
 
 ## Product outcome
 
-Add a hands-free, conversational workspace to the iPhone app. A person speaks a request, Hermes transcribes it on-device, prepares an allowlisted action, reads the result back, and waits for a one-time confirmation before handing anything to another app.
+Add a hands-free, conversational workspace to the iPhone app. One tap starts a foreground conversation: Hermes detects when the person finishes speaking, transcribes the turn on-device, responds aloud, and automatically listens again. It prepares only allowlisted actions and waits for a one-time confirmation before handing anything to another app.
 
 The first release supports two complete journeys:
 
@@ -15,13 +15,15 @@ Hermes also recognizes requests to open Gmail on the web and Settings. An "open 
 
 iOS sandboxes third-party apps. Hermes cannot inspect Gmail or Notes, tap their controls, type into arbitrary fields, or keep a foreground voice conversation running after another app replaces it onscreen. The implementation must use public system handoff APIs instead of accessibility automation or private URL schemes.
 
-The safe interaction is therefore:
+The safe in-app interaction is therefore:
 
 ```text
-speak -> local transcript -> deterministic plan -> visible review -> confirm once -> system handoff
+tap once -> listen -> detect pause -> local transcript -> deterministic plan -> speak -> listen again
+                                                        |
+                                                        +-> visible review -> confirm once -> system handoff
 ```
 
-Hermes never sends an email or saves an Apple Note itself. The destination app presents its own final send or save control.
+The red Stop button ends the conversation at any point. A confirmed external handoff ends listening before iOS opens the destination. Hermes never sends an email or saves an Apple Note itself; the destination app presents its own final send or save control.
 
 ## MVP conversation model
 
@@ -56,12 +58,13 @@ The recipient must parse as a bounded email address before the action can become
 ### `WhisperDictCore`
 
 - `VoiceAgentSession`: deterministic, testable state machine for multi-turn collection, validation, pending approvals, cancellation, and one-time action consumption.
+- `VoiceTurnDetector`: deterministic speech/silence timing that completes a spoken turn after sustained speech and an end pause, while ignoring brief noise and stopping an idle session.
 - `VoiceAgentAction`: a small allowlist of external effects: open a public URL, prepare a mail draft, or share note text.
 - No network client, secret, arbitrary tool name, reflection, shell command, or model-generated URL exists in the executor path.
 
 ### iOS app
 
-- `VoiceAgentController`: records with the existing local recorder, transcribes with the existing Whisper model, feeds text into `VoiceAgentSession`, and speaks responses with `AVSpeechSynthesizer`.
+- `VoiceAgentController`: keeps the one-tap foreground conversation loop alive, records with the existing local recorder, transcribes with the existing Whisper model, feeds text into `VoiceAgentSession`, speaks responses with `AVSpeechSynthesizer`, and resumes listening.
 - `VoiceAgentView`: conversation transcript, recording state, draft preview, and explicit confirm/cancel controls.
 - The controller's closed action executor converts only validated action values into `UIApplication.open` or a system share sheet.
 - `ContentView`: keeps dictation intact and adds an Agent tab.
@@ -82,6 +85,7 @@ The recipient must parse as a bounded email address before the action can become
 ## Test plan
 
 - Unit tests for every conversation transition and supported phrase.
+- Unit tests for speech onset, brief noise, end-of-turn silence, renewed speech, reset, and idle timeout.
 - Validation tests for malformed addresses, missing fields, maximum lengths, cancellation, unsupported commands, and confirmation replay.
 - URL-construction tests for reserved characters and injection-like input.
 - Existing transcript, storage, appearance, and keyboard tests remain green.
@@ -96,6 +100,7 @@ The recipient must parse as a bounded email address before the action can become
 - Reading inboxes, notes, contacts, or screen contents.
 - Controlling another app after Hermes leaves the foreground.
 - Background hotword listening.
+- Simultaneous full-duplex speech or interrupting Hermes while it is speaking; this release uses automatic alternating turns.
 - Cloud LLM planning or downloadable executable tools.
 
 ## Future expansion

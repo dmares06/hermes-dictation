@@ -115,6 +115,18 @@ final class VoiceAgentSessionTests: XCTestCase {
         XCTAssertEqual(response.assistantMessage, "I can help create a note. What should it say?")
     }
 
+    func testNotesCapabilityQuestionExplainsTheRequiredSystemHandoff() {
+        var session = VoiceAgentSession()
+
+        let response = session.receive("Are you able to save that in my Notes app?")
+
+        XCTAssertEqual(session.step, .idle)
+        XCTAssertNil(response.action)
+        XCTAssertTrue(response.assistantMessage.contains("choose Notes"))
+        XCTAssertTrue(response.assistantMessage.contains("tap Save"))
+        XCTAssertFalse(response.assistantMessage.contains("can't do that safely yet"))
+    }
+
     func testOpenGmailRequiresConfirmation() {
         var session = VoiceAgentSession()
 

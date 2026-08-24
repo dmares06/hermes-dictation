@@ -30,6 +30,7 @@
 		A10000000000000000000068 /* VoiceAgentSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000006B /* VoiceAgentSession.swift */; };
 		A10000000000000000000069 /* VoiceAgentController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000006C /* VoiceAgentController.swift */; };
 		A1000000000000000000006A /* VoiceAgentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000006D /* VoiceAgentView.swift */; };
+		A1000000000000000000006E /* VoiceTurnDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000006F /* VoiceTurnDetector.swift */; };
 		B20000000000000000000001 /* WhisperDictLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B20000000000000000000010 /* WhisperDictLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B20000000000000000000002 /* BackgroundDictationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000011 /* BackgroundDictationState.swift */; };
 		B20000000000000000000003 /* Keyboard BackgroundDictationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000011 /* BackgroundDictationState.swift */; };
@@ -98,6 +99,7 @@
 		A1000000000000000000006B /* VoiceAgentSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAgentSession.swift; sourceTree = "<group>"; };
 		A1000000000000000000006C /* VoiceAgentController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAgentController.swift; sourceTree = "<group>"; };
 		A1000000000000000000006D /* VoiceAgentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAgentView.swift; sourceTree = "<group>"; };
+		A1000000000000000000006F /* VoiceTurnDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTurnDetector.swift; sourceTree = "<group>"; };
 		B20000000000000000000010 /* WhisperDictLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WhisperDictLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B20000000000000000000011 /* BackgroundDictationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundDictationState.swift; sourceTree = "<group>"; };
 		B20000000000000000000012 /* WhisperDictActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperDictActivityAttributes.swift; sourceTree = "<group>"; };
@@ -185,6 +187,7 @@
 				A10000000000000000000054 /* TranscriptStore.swift */,
 				A10000000000000000000055 /* KeyboardLayout.swift */,
 				A1000000000000000000006B /* VoiceAgentSession.swift */,
+				A1000000000000000000006F /* VoiceTurnDetector.swift */,
 				B20000000000000000000011 /* BackgroundDictationState.swift */,
 				B20000000000000000000012 /* WhisperDictActivityAttributes.swift */,
 			);
@@ -364,6 +367,7 @@
 				A10000000000000000000068 /* VoiceAgentSession.swift in Sources */,
 				A10000000000000000000069 /* VoiceAgentController.swift in Sources */,
 				A1000000000000000000006A /* VoiceAgentView.swift in Sources */,
+				A1000000000000000000006E /* VoiceTurnDetector.swift in Sources */,
 				B20000000000000000000002 /* BackgroundDictationState.swift in Sources */,
 				B20000000000000000000005 /* WhisperDictActivityAttributes.swift in Sources */,
 				B20000000000000000000007 /* BackgroundDictationIntent.swift in Sources */,

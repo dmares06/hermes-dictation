@@ -161,19 +161,21 @@ The iOS project is in `WhisperDict.xcodeproj/`. It contains:
 
 - `WhisperDict` — records from the iPhone microphone, transcribes locally with WhisperKit, removes configurable filler words, and keeps recent transcripts
 - `WhisperDictKeyboard` — a lightweight QWERTY/numeric keyboard that can insert the latest transcript from the app
-- `Hermes Agent` — a conversational tab that prepares email and note handoffs, speaks responses, and waits for explicit approval
+- `Hermes Agent` — a one-tap conversational tab that detects the end of each spoken turn, answers aloud, listens again, and waits for explicit approval before external handoffs
 - WhisperKit 1.x — on-device Core ML transcription
 
 ### iPhone workflow
 
 1. Open WhisperDict and prepare the selected model. `Small` is the default for the best available accuracy in this build.
 2. Tap the microphone, speak naturally, and tap Stop. The app writes audio to a temporary file so long recordings do not accumulate in RAM.
-3. In another app, switch to the WhisperDict keyboard and tap **Record**. iOS opens WhisperDict so the containing app can access the microphone; swipe back, speak, then tap **Stop** on the keyboard. The transcript is inserted automatically.
-4. Optionally assign the **Start Dictation** WhisperDict shortcut to your iPhone Action Button. This starts the Apple-approved background recording without opening WhisperDict. Press it again, tap **Stop** on the keyboard, or use the Live Activity Stop button to finish.
+3. Assign the **Start Dictation** WhisperDict shortcut to your iPhone Action Button in Settings → Action Button → Shortcut.
+4. In another app, switch to the WhisperDict keyboard and press and hold the physical Action Button. Speak naturally, then tap **Stop** on the keyboard, press the Action Button again, or use the Live Activity Stop button. Only that new transcript is inserted automatically.
 
 The recorder handles denied microphone permission, audio-session interruptions, disconnected audio routes, app backgrounding, missing models, and idle-time memory pressure. Transcript cleanup preserves meaningful uses such as “I like pizza” while removing hesitation sounds and clearly delimited filler phrases.
 
 ### Voice agent workflow
+
+Tap the Agent microphone once to start. Speak naturally and pause when a turn is complete; Hermes transcribes locally, answers aloud, then starts listening for the next turn automatically. Tap the red Stop button to end the conversation. This is automatic alternating turn-taking, not simultaneous full-duplex audio.
 
 The **Agent** tab supports these on-device conversations:
 
@@ -181,11 +183,11 @@ The **Agent** tab supports these on-device conversations:
 - “Create a note” → speak the note → review it → say **confirm** or tap **Share note**, then choose Notes
 - “Open Gmail” or “Open Settings” → review the destination → confirm before leaving Hermes
 
-Email uses the iPhone's default mail app, so set Gmail as the default mail app if you want drafts to open there. Hermes never presses Send or saves a note itself. iOS does not let third-party apps inspect or control another app's interface; the conversation stays in Hermes until a standard system handoff opens.
+Email uses the iPhone's default mail app, so set Gmail as the default mail app if you want drafts to open there. Hermes never presses Send or saves a note itself. iOS does not let third-party apps inspect or control another app's interface; the conversation stays in Hermes until a standard system handoff opens, and listening ends before that handoff.
 
 The typed action model, approval rules, security boundaries, test plan, and future expansion path are documented in [`docs/VOICE_AGENT_PLAN.md`](docs/VOICE_AGENT_PLAN.md).
 
-> iOS restriction: Apple does not allow custom keyboard extensions to access the microphone. The keyboard's Record button opens the containing WhisperDict app to start audio, after which you swipe back; the Action Button, Siri, or Shortcuts can instead start WhisperDict's `AudioRecordingIntent` in the background. Third-party keyboards are unavailable in secure fields, phone-pad fields, and apps that disable custom keyboards.
+> iOS restriction: Apple does not allow custom keyboard extensions to access the microphone or reliably launch their containing app. The keyboard therefore shows Action Button guidance and can stop an active recording, while the physical Action Button, Siri, or Shortcuts starts WhisperDict's `AudioRecordingIntent` in the background. Third-party keyboards are unavailable in secure fields, phone-pad fields, and apps that disable custom keyboards.
 
 Build source without signing profiles:
 

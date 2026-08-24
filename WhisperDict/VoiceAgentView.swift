@@ -32,7 +32,7 @@ struct VoiceAgentView: View {
                             controller: controller,
                             modelReady: downloadService.isPrepared,
                             color: settings.recordButtonColor,
-                            action: { Task { await controller.toggleRecording(settings: settings) } }
+                            action: { Task { await controller.toggleConversation(settings: settings) } }
                         )
 
                         QuickRequests(controller: controller)
@@ -98,7 +98,7 @@ private struct AgentBoundaryCard: View {
             Label("You stay in control", systemImage: "checkmark.shield")
                 .font(.headline)
                 .foregroundStyle(.mint)
-            Text("Hermes prepares and reads back each action. It waits for your confirmation, then opens a standard email or share screen where you choose Send or Save.")
+            Text("Tap once to start a live conversation. Hermes listens for the end of each turn, answers aloud, and listens again. External actions still wait for your confirmation.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -121,11 +121,11 @@ private struct AgentRecordingCard: View {
                 .foregroundStyle(statusColor)
                 .multilineTextAlignment(.center)
 
-            if controller.isRecording {
+            if controller.conversationActive {
                 Text(String(format: "%02d:%02d", controller.elapsedSeconds / 60, controller.elapsedSeconds % 60))
                     .font(.system(.title3, design: .monospaced, weight: .medium))
             } else {
-                Text(modelReady ? "Speech is transcribed on this device." : "Prepare the model to begin.")
+                Text(modelReady ? "One tap starts hands-free turn taking." : "Prepare the model to begin.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -138,21 +138,21 @@ private struct AgentRecordingCard: View {
                         .fill(buttonColor)
                         .frame(width: 96, height: 96)
                         .shadow(color: buttonColor.opacity(0.25), radius: 16, y: 7)
-                    if controller.isBusy {
+                    if controller.isBusy && !controller.conversationActive {
                         ProgressView().tint(buttonForeground).scaleEffect(1.3)
                     } else {
-                        Image(systemName: controller.isRecording ? "stop.fill" : "waveform.and.mic")
+                        Image(systemName: controller.conversationActive ? "stop.fill" : "waveform.and.mic")
                             .font(.system(size: 34, weight: .semibold))
                             .foregroundStyle(buttonForeground)
                     }
                 }
             }
             .buttonStyle(.plain)
-            .disabled(controller.isBusy || !modelReady)
-            .accessibilityLabel(controller.isRecording ? "Stop speaking" : "Talk to Hermes")
-            .accessibilityHint("Records one request for private on-device transcription")
+            .disabled(!modelReady && !controller.conversationActive)
+            .accessibilityLabel(controller.conversationActive ? "End conversation" : "Start conversation")
+            .accessibilityHint("Starts or ends private hands-free turn taking with Hermes")
 
-            Text(controller.isRecording ? "Tap when you’re finished" : "Tap, speak one turn, then tap again")
+            Text(instructionText)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -164,16 +164,29 @@ private struct AgentRecordingCard: View {
 
     private var statusColor: Color {
         if case .failed = controller.phase { return .red }
-        return controller.isRecording ? .red : .primary
+        return controller.conversationActive ? .red : .primary
     }
 
     private var buttonColor: Color {
-        controller.isRecording ? .red : Color(appearanceColor: color)
+        controller.conversationActive ? .red : Color(appearanceColor: color)
     }
 
     private var buttonForeground: Color {
-        guard !controller.isRecording, color.prefersDarkForeground else { return .white }
+        guard !controller.conversationActive, color.prefersDarkForeground else { return .white }
         return .black
+    }
+
+    private var instructionText: String {
+        guard controller.conversationActive else {
+            return "Tap once, speak naturally, and Hermes will keep the conversation going"
+        }
+        switch controller.phase {
+        case .recording: return "Listening now — pause when your turn is finished"
+        case .transcribing: return "Understanding your request…"
+        case .speaking: return "Hermes will listen again after speaking"
+        case .ready: return "Getting ready to listen again…"
+        case .failed: return "Tap Stop, then start a new conversation"
+        }
     }
 }
 
@@ -292,6 +305,7 @@ private struct QuickRequests: View {
             .buttonStyle(.bordered)
             .disabled(
                 controller.isRecording
+                    || controller.conversationActive
                     || controller.isBusy
                     || controller.pendingAction != nil
                     || controller.session.step != .idle

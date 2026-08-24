@@ -205,6 +205,12 @@ public struct VoiceAgentSession: Sendable {
             state = .emailRecipient
             return VoiceAgentTurn(assistantMessage: "Who is the email for?")
         }
+        if intent.contains("note"),
+           Self.containsAny(intent, phrases: ["are you able", "can you save", "save that", "save it", "in my notes app"]) {
+            return VoiceAgentTurn(
+                assistantMessage: "I can prepare the note and open the system share sheet. iOS still requires you to choose Notes and tap Save; I can't tap inside Notes for you."
+            )
+        }
         if intent.contains("note"), Self.containsAny(intent, phrases: ["create", "write", "start", "new", "open"]) {
             state = .note
             let message = intent.contains("open")

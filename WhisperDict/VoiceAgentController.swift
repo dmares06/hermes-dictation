@@ -40,12 +40,17 @@ final class VoiceAgentController {
     private(set) var audioLevel: Float = 0
     private(set) var elapsedSeconds = 0
     private(set) var session = VoiceAgentSession()
+    private(set) var conversationActive = false
     var showsMicrophoneSettings = false
     var sharePayload: VoiceAgentSharePayload?
 
     private let recorder: DictationAudioRecorder
     private let transcriber: DictationTranscriber
     private let speaker = VoiceAgentSpeaker()
+    private var turnDetector = VoiceTurnDetector()
+    private var conversationID: UUID?
+    private var conversationSettings: SharedState?
+    private var isCompletingTurn = false
     @ObservationIgnored
     nonisolated(unsafe) private var elapsedTask: Task<Void, Never>?
 
@@ -56,10 +61,10 @@ final class VoiceAgentController {
         self.recorder = recorder
         self.transcriber = transcriber
         recorder.onLevel = { [weak self] level in
-            Task { @MainActor in self?.audioLevel = level }
+            Task { @MainActor in self?.handleAudioLevel(level) }
         }
         recorder.onInterruption = { [weak self] in
-            Task { @MainActor in await self?.stopAndProcess() }
+            Task { @MainActor in await self?.endConversation(announce: false) }
         }
     }
 
@@ -73,25 +78,25 @@ final class VoiceAgentController {
 
     var statusText: String {
         switch phase {
-        case .ready: "Ready for a request"
-        case .recording: "Listening…"
+        case .ready: conversationActive ? "Ready for your next request" : "Ready for a conversation"
+        case .recording: "Listening — speak naturally…"
         case .transcribing: "Understanding on this iPhone…"
         case .speaking: "Speaking…"
         case .failed(let message): message
         }
     }
 
-    func toggleRecording(settings: SharedState) async {
-        if isRecording {
-            await stopAndProcess(settings: settings)
+    func toggleConversation(settings: SharedState) async {
+        if conversationActive {
+            await endConversation()
         } else {
-            await startRecording(settings: settings)
+            await startConversation(settings: settings)
         }
     }
 
     func stopIfNeeded(settings: SharedState) async {
-        guard isRecording else { return }
-        await stopAndProcess(settings: settings)
+        guard conversationActive || isRecording || isBusy else { return }
+        await endConversation(announce: false)
     }
 
     func submitText(_ text: String) async {
@@ -101,14 +106,16 @@ final class VoiceAgentController {
 
     func confirmPending() async {
         guard pendingAction != nil else { return }
+        discardCurrentRecording()
         messages.append(VoiceAgentMessage(role: .person, text: "Confirm"))
         await handle(session.confirm())
     }
 
     func cancelPending() async {
         guard pendingAction != nil || session.step != .idle else { return }
+        discardCurrentRecording()
         messages.append(VoiceAgentMessage(role: .person, text: "Cancel"))
-        await handle(session.cancel())
+        await handle(session.cancel(), resumeConversation: conversationActive)
     }
 
     func openAppSettings() {
@@ -116,8 +123,26 @@ final class VoiceAgentController {
         UIApplication.shared.open(url)
     }
 
-    private func startRecording(settings: SharedState) async {
-        guard !isBusy else { return }
+    private func startConversation(settings: SharedState) async {
+        conversationActive = true
+        conversationID = UUID()
+        conversationSettings = settings
+        guard await startRecording(settings: settings) else {
+            conversationActive = false
+            conversationID = nil
+            conversationSettings = nil
+            return
+        }
+        messages.append(
+            VoiceAgentMessage(
+                role: .hermes,
+                text: "Conversation started. Speak naturally; I'll answer and listen again automatically."
+            )
+        )
+    }
+
+    private func startRecording(settings: SharedState) async -> Bool {
+        guard !isBusy else { return false }
         speaker.stop()
 
         let defaults = UserDefaults(suiteName: SharedState.appGroupID)
@@ -125,18 +150,18 @@ final class VoiceAgentController {
               FileManager.default.fileExists(atPath: modelPath)
         else {
             phase = .failed("Prepare the speech model in Dictation before using the agent.")
-            return
+            return false
         }
         let preparedModel = defaults?.string(forKey: "preparedModelSize")
         guard preparedModel == settings.modelSize.rawValue || modelPath.localizedCaseInsensitiveContains(settings.modelSize.rawValue) else {
             phase = .failed("Prepare the selected \(settings.modelSize.title) model before using the agent.")
-            return
+            return false
         }
 
         guard await microphonePermission() else {
             phase = .failed("Microphone access is off. Enable it in Settings to talk to Hermes.")
             showsMicrophoneSettings = true
-            return
+            return false
         }
 
         do {
@@ -144,13 +169,17 @@ final class VoiceAgentController {
             elapsedSeconds = 0
             audioLevel = 0
             phase = .recording
+            isCompletingTurn = false
+            turnDetector.reset(at: ProcessInfo.processInfo.systemUptime)
             startElapsedTimer()
+            return true
         } catch {
             phase = .failed(error.localizedDescription)
+            return false
         }
     }
 
-    private func stopAndProcess(settings: SharedState? = nil) async {
+    private func stopAndProcess(settings: SharedState, conversationID expectedConversationID: UUID) async {
         guard let audioURL = recorder.stop() else {
             if isRecording { phase = .failed("The recording was empty. Please try again.") }
             return
@@ -160,43 +189,113 @@ final class VoiceAgentController {
         phase = .transcribing
 
         defer { try? FileManager.default.removeItem(at: audioURL) }
-        let defaults = UserDefaults(suiteName: SharedState.appGroupID)
-        let modelPath = settings?.modelFolderPath ?? defaults?.string(forKey: "modelFolderPath")
+        let modelPath = settings.modelFolderPath
         guard let modelPath else {
             phase = .failed("The speech model is missing. Prepare it again in Dictation.")
+            conversationActive = false
             return
         }
 
         do {
             let rawText = try await transcriber.transcribe(audioURL: audioURL, modelPath: modelPath)
+            guard conversationActive, conversationID == expectedConversationID else { return }
             let collectsProse = session.step == .collectingEmailBody || session.step == .collectingNote
             let options = TranscriptCleanupOptions(
-                removeFillers: settings?.removeFillers ?? defaults?.object(forKey: "removeFillers") as? Bool ?? true,
-                autoPunctuate: collectsProse && (settings?.autoPunctuate ?? defaults?.object(forKey: "autoPunctuate") as? Bool ?? true),
-                autoCapitalize: collectsProse && (settings?.autoCapitalize ?? defaults?.object(forKey: "autoCapitalize") as? Bool ?? true)
+                removeFillers: settings.removeFillers,
+                autoPunctuate: collectsProse && settings.autoPunctuate,
+                autoCapitalize: collectsProse && settings.autoCapitalize
             )
             let transcript = TranscriptCleaner.clean(rawText, options: options)
             phase = .ready
-            await process(transcript)
+            await process(transcript, resumeConversation: true)
         } catch {
-            phase = .failed(error.localizedDescription)
+            guard conversationActive, conversationID == expectedConversationID else { return }
+            messages.append(VoiceAgentMessage(role: .hermes, text: "I didn't catch that. I'm listening again."))
+            phase = .speaking
+            await speaker.speak("I didn't catch that. I'm listening again.")
+            phase = .ready
+            _ = await startRecording(settings: settings)
         }
     }
 
-    private func process(_ text: String) async {
+    private func process(_ text: String, resumeConversation: Bool = false) async {
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty else { return }
+        guard !cleaned.isEmpty else {
+            if resumeConversation, conversationActive, let conversationSettings {
+                _ = await startRecording(settings: conversationSettings)
+            }
+            return
+        }
         messages.append(VoiceAgentMessage(role: .person, text: cleaned))
-        await handle(session.receive(cleaned))
+        await handle(session.receive(cleaned), resumeConversation: resumeConversation)
     }
 
-    private func handle(_ turn: VoiceAgentTurn) async {
+    private func handle(_ turn: VoiceAgentTurn, resumeConversation: Bool = false) async {
         messages.append(VoiceAgentMessage(role: .hermes, text: turn.assistantMessage))
         phase = .speaking
         await speaker.speak(turn.assistantMessage)
         phase = .ready
-        guard let action = turn.action else { return }
-        await execute(action)
+        if let action = turn.action {
+            conversationActive = false
+            conversationID = nil
+            conversationSettings = nil
+            await execute(action)
+            return
+        }
+        if resumeConversation, conversationActive, let conversationSettings {
+            _ = await startRecording(settings: conversationSettings)
+        }
+    }
+
+    private func handleAudioLevel(_ level: Float) {
+        audioLevel = level
+        guard conversationActive, isRecording, !isCompletingTurn else { return }
+        let result = turnDetector.observe(level: level, at: ProcessInfo.processInfo.systemUptime)
+        switch result {
+        case .listening:
+            return
+        case .finishTurn:
+            guard let conversationSettings, let conversationID else { return }
+            isCompletingTurn = true
+            Task { await stopAndProcess(settings: conversationSettings, conversationID: conversationID) }
+        case .idleTimeout:
+            isCompletingTurn = true
+            Task { await endForIdleTimeout() }
+        }
+    }
+
+    private func endForIdleTimeout() async {
+        discardCurrentRecording()
+        conversationActive = false
+        conversationID = nil
+        conversationSettings = nil
+        let message = "I paused because I didn't hear anything. Tap Start conversation when you're ready."
+        messages.append(VoiceAgentMessage(role: .hermes, text: message))
+        phase = .speaking
+        await speaker.speak(message)
+        phase = .ready
+    }
+
+    private func endConversation(announce: Bool = true) async {
+        let wasActive = conversationActive || isRecording || isBusy
+        conversationActive = false
+        conversationID = nil
+        conversationSettings = nil
+        speaker.stop()
+        discardCurrentRecording()
+        phase = .ready
+        guard announce, wasActive else { return }
+        messages.append(VoiceAgentMessage(role: .hermes, text: "Conversation ended."))
+    }
+
+    private func discardCurrentRecording() {
+        if let audioURL = recorder.stop() {
+            try? FileManager.default.removeItem(at: audioURL)
+        }
+        elapsedTask?.cancel()
+        elapsedTask = nil
+        audioLevel = 0
+        isCompletingTurn = false
     }
 
     private func execute(_ action: VoiceAgentAction) async {
