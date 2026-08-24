@@ -1,0 +1,345 @@
+import SwiftUI
+
+struct ContentView: View {
+    private enum RootTab: Hashable {
+        case dictation
+        case agent
+    }
+
+    @Environment(SharedState.self) private var settings
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var downloadService = ModelDownloadService()
+    @State private var dictation = DictationSessionController()
+    @State private var agent = VoiceAgentController()
+    @State private var copiedText = ""
+    @State private var selectedTab: RootTab = .dictation
+
+    var body: some View {
+        TabView(selection: $selectedTab) {
+            dictationView
+                .tag(RootTab.dictation)
+                .tabItem { Label("Dictation", systemImage: "mic.fill") }
+
+            VoiceAgentView(controller: agent, downloadService: downloadService)
+                .tag(RootTab.agent)
+                .tabItem { Label("Agent", systemImage: "waveform.and.person.filled") }
+        }
+        .tint(.mint)
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase != .active else { return }
+            Task {
+                if !dictation.isKeyboardHandoffSession {
+                    await dictation.stopIfNeeded(settings: settings)
+                }
+                await agent.stopIfNeeded(settings: settings)
+            }
+        }
+        .onAppear {
+            downloadService.refresh(for: settings.modelSize)
+        }
+        .onOpenURL { url in
+            guard url.scheme == "whisperdict" else { return }
+            if url.host == "agent" {
+                selectedTab = .agent
+                return
+            }
+            guard url.host == "record" else { return }
+            Task {
+                if !downloadService.isPrepared {
+                    await downloadService.prepare(model: settings.modelSize)
+                }
+                guard downloadService.isPrepared else {
+                    BackgroundDictationState.fail(
+                        downloadService.errorMessage ?? "Prepare the speech model in WhisperDict before recording."
+                    )
+                    return
+                }
+                await dictation.startFromKeyboard(settings: settings)
+            }
+        }
+    }
+
+    private var dictationView: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(spacing: 20) {
+                    RecordingCard(
+                        dictation: dictation,
+                        modelReady: downloadService.isPrepared,
+                        recordButtonColor: settings.recordButtonColor,
+                        action: { Task { await dictation.toggleRecording(settings: settings) } }
+                    )
+
+                    if !downloadService.isPrepared {
+                        ModelPreparationCard(service: downloadService, model: settings.modelSize)
+                    }
+
+                    if !dictation.transcript.isEmpty {
+                        TranscriptCard(
+                            transcript: dictation.transcript,
+                            interrupted: dictation.wasInterrupted,
+                            copied: copiedText == dictation.transcript,
+                            copyAction: { copy(dictation.transcript) }
+                        )
+                    }
+
+                    if !dictation.history.isEmpty {
+                        HistorySection(
+                            transcripts: dictation.history,
+                            copyAction: copy,
+                            clearAction: dictation.clearHistory
+                        )
+                    }
+
+                    KeyboardTipCard()
+                }
+                .padding()
+            }
+            .background(Color(uiColor: .systemGroupedBackground))
+            .navigationTitle("WhisperDict")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink(destination: SettingsView()) {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                }
+            }
+            .alert("Microphone access needed", isPresented: $dictation.showsMicrophoneSettings) {
+                Button("Open Settings", action: dictation.openAppSettings)
+                Button("Not now", role: .cancel) {}
+            } message: {
+                Text("Turn on Microphone access for WhisperDict, then return here to record.")
+            }
+        }
+    }
+
+    private func copy(_ text: String) {
+        dictation.copyTranscript(text)
+        copiedText = text
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            if copiedText == text { copiedText = "" }
+        }
+    }
+
+}
+
+private struct RecordingCard: View {
+    let dictation: DictationSessionController
+    let modelReady: Bool
+    let recordButtonColor: AppearanceColor
+    let action: () -> Void
+
+    var body: some View {
+        VStack(spacing: 18) {
+            VStack(spacing: 5) {
+                Text(dictation.statusText)
+                    .font(.headline)
+                    .foregroundStyle(statusColor)
+                    .multilineTextAlignment(.center)
+                if dictation.isRecording {
+                    Text(duration)
+                        .font(.system(.title3, design: .monospaced, weight: .medium))
+                        .contentTransition(.numericText())
+                } else {
+                    Text(modelReady ? "Your audio stays on this device." : "Prepare the model to begin.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            LevelMeter(level: dictation.audioLevel, active: dictation.isRecording)
+
+            Button(action: action) {
+                ZStack {
+                    Circle()
+                        .fill(buttonColor)
+                        .frame(width: 108, height: 108)
+                        .shadow(color: buttonColor.opacity(0.25), radius: 18, y: 8)
+                    if dictation.isBusy {
+                        ProgressView().tint(buttonForegroundColor).scaleEffect(1.4)
+                    } else {
+                        Image(systemName: dictation.isRecording ? "stop.fill" : "mic.fill")
+                            .font(.system(size: 38, weight: .semibold))
+                            .foregroundStyle(buttonForegroundColor)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(dictation.isBusy)
+            .accessibilityLabel(dictation.isRecording ? "Stop recording" : "Start recording")
+            .accessibilityHint("Records speech for private on-device transcription")
+            .sensoryFeedback(.start, trigger: dictation.isRecording)
+
+            Text(dictation.isRecording ? "Tap when you’re finished" : "Tap, speak naturally, then tap again")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 26)
+        .padding(.horizontal)
+        .background(.background, in: RoundedRectangle(cornerRadius: 24))
+    }
+
+    private var duration: String {
+        String(format: "%02d:%02d", dictation.elapsedSeconds / 60, dictation.elapsedSeconds % 60)
+    }
+
+    private var statusColor: Color {
+        if case .failed = dictation.phase { return .red }
+        return dictation.isRecording ? .red : .primary
+    }
+
+    private var buttonColor: Color {
+        dictation.isRecording ? .red : Color(appearanceColor: recordButtonColor)
+    }
+
+    private var buttonForegroundColor: Color {
+        guard !dictation.isRecording, recordButtonColor.prefersDarkForeground else { return .white }
+        return .black
+    }
+}
+
+private struct LevelMeter: View {
+    let level: Float
+    let active: Bool
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 5) {
+            ForEach(0..<15, id: \.self) { index in
+                Capsule()
+                    .fill(barColor(index: index))
+                    .frame(width: 5, height: barHeight(index: index))
+            }
+        }
+        .frame(height: 34)
+        .accessibilityHidden(true)
+    }
+
+    private func barHeight(index: Int) -> CGFloat {
+        guard active else { return 5 }
+        let centerDistance = abs(index - 7)
+        let shape = max(0.25, 1 - Float(centerDistance) * 0.08)
+        return CGFloat(5 + 29 * min(1, level * 1.8) * shape)
+    }
+
+    private func barColor(index: Int) -> Color {
+        active && Float(index) / 15 < level ? .red : .secondary.opacity(0.25)
+    }
+}
+
+private struct ModelPreparationCard: View {
+    let service: ModelDownloadService
+    let model: ModelSize
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Prepare on-device speech", systemImage: "arrow.down.circle")
+                .font(.headline)
+            Text("Download the \(model.title) model once. The \(model.title.lowercased()) model is \(model.detail.lowercased()).")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            if service.isPreparing {
+                ProgressView(value: service.progress)
+                Text("Downloading… \(Int(service.progress * 100))%")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Button("Prepare model") {
+                    Task { await service.prepare(model: model) }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            if let errorMessage = service.errorMessage {
+                Text(errorMessage).font(.footnote).foregroundStyle(.red)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(.background, in: RoundedRectangle(cornerRadius: 18))
+    }
+}
+
+private struct TranscriptCard: View {
+    let transcript: String
+    let interrupted: Bool
+    let copied: Bool
+    let copyAction: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Latest transcript", systemImage: "text.quote")
+                    .font(.headline)
+                Spacer()
+                Button(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc", action: copyAction)
+                    .font(.subheadline.weight(.semibold))
+            }
+            Text(transcript)
+                .font(.body)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if interrupted {
+                Label("Recording ended after an interruption; review the final words.", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+        .padding()
+        .background(.background, in: RoundedRectangle(cornerRadius: 18))
+    }
+}
+
+private struct HistorySection: View {
+    let transcripts: [SavedTranscript]
+    let copyAction: (String) -> Void
+    let clearAction: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Recent dictations").font(.headline)
+                Spacer()
+                Button("Clear", role: .destructive, action: clearAction).font(.subheadline)
+            }
+            ForEach(transcripts.prefix(10)) { item in
+                Button { copyAction(item.text) } label: {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(item.text).lineLimit(3).foregroundStyle(.primary)
+                        Text(item.createdAt, style: .relative).font(.caption).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Copies this transcript")
+                if item.id != transcripts.prefix(10).last?.id { Divider() }
+            }
+        }
+        .padding()
+        .background(.background, in: RoundedRectangle(cornerRadius: 18))
+    }
+}
+
+private struct KeyboardTipCard: View {
+    var body: some View {
+        NavigationLink(destination: SetupGuideView()) {
+            HStack(spacing: 12) {
+                Image(systemName: "keyboard").font(.title2).foregroundStyle(.mint)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Use your transcript anywhere").font(.headline).foregroundStyle(.primary)
+                    Text("Enable the keyboard to type or insert your latest dictation in supported apps.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+            }
+            .padding()
+            .background(.background, in: RoundedRectangle(cornerRadius: 18))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+#Preview {
+    ContentView().environment(SharedState(defaults: .standard))
+}

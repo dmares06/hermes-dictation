@@ -1,0 +1,599 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 71;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* WhisperDictKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* WhisperDictKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A10000000000000000000003 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000004 /* WhisperKit */; };
+		A1000000000000000000002A /* WhisperDictApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000000C /* WhisperDictApp.swift */; };
+		A1000000000000000000002B /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000000D /* ContentView.swift */; };
+		A1000000000000000000002C /* SharedState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000000E /* SharedState.swift */; };
+		A1000000000000000000002E /* ModelDownloadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000010 /* ModelDownloadService.swift */; };
+		A1000000000000000000002F /* SetupGuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000011 /* SetupGuideView.swift */; };
+		A10000000000000000000030 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000012 /* SettingsView.swift */; };
+		A10000000000000000000031 /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000015 /* KeyboardViewController.swift */; };
+		A10000000000000000000032 /* KeyboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000016 /* KeyboardView.swift */; };
+		A10000000000000000000044 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000045 /* Assets.xcassets */; };
+		A10000000000000000000056 /* DictationSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000050 /* DictationSessionController.swift */; };
+		A10000000000000000000057 /* DictationAudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000051 /* DictationAudioRecorder.swift */; };
+		A10000000000000000000058 /* DictationTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000052 /* DictationTranscriber.swift */; };
+		A10000000000000000000059 /* TranscriptCleaner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000053 /* TranscriptCleaner.swift */; };
+		A10000000000000000000060 /* TranscriptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000054 /* TranscriptStore.swift */; };
+		A10000000000000000000061 /* Keyboard TranscriptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000054 /* TranscriptStore.swift */; };
+		A10000000000000000000062 /* KeyboardLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000055 /* KeyboardLayout.swift */; };
+		A10000000000000000000066 /* AppearanceSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000065 /* AppearanceSettings.swift */; };
+		A10000000000000000000067 /* Keyboard AppearanceSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000065 /* AppearanceSettings.swift */; };
+		A10000000000000000000068 /* VoiceAgentSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000006B /* VoiceAgentSession.swift */; };
+		A10000000000000000000069 /* VoiceAgentController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000006C /* VoiceAgentController.swift */; };
+		A1000000000000000000006A /* VoiceAgentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000006D /* VoiceAgentView.swift */; };
+		B20000000000000000000001 /* WhisperDictLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B20000000000000000000010 /* WhisperDictLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B20000000000000000000002 /* BackgroundDictationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000011 /* BackgroundDictationState.swift */; };
+		B20000000000000000000003 /* Keyboard BackgroundDictationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000011 /* BackgroundDictationState.swift */; };
+		B20000000000000000000004 /* Activity BackgroundDictationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000011 /* BackgroundDictationState.swift */; };
+		B20000000000000000000005 /* WhisperDictActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000012 /* WhisperDictActivityAttributes.swift */; };
+		B20000000000000000000006 /* Activity WhisperDictActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000012 /* WhisperDictActivityAttributes.swift */; };
+		B20000000000000000000007 /* BackgroundDictationIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000013 /* BackgroundDictationIntent.swift */; };
+		B20000000000000000000008 /* WhisperDictLiveActivityBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000014 /* WhisperDictLiveActivityBundle.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A10000000000000000000007 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000008 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000009;
+			remoteInfo = WhisperDictKeyboard;
+		};
+		B20000000000000000000020 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000008 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B20000000000000000000030;
+			remoteInfo = WhisperDictLiveActivity;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A1000000000000000000000A /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A10000000000000000000001 /* WhisperDictKeyboard.appex in Embed Foundation Extensions */,
+				B20000000000000000000001 /* WhisperDictLiveActivity.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		A10000000000000000000002 /* WhisperDictKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WhisperDictKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1000000000000000000000B /* WhisperDict.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WhisperDict.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1000000000000000000000C /* WhisperDictApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperDictApp.swift; sourceTree = "<group>"; };
+		A1000000000000000000000D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A1000000000000000000000E /* SharedState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedState.swift; sourceTree = "<group>"; };
+		A10000000000000000000010 /* ModelDownloadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDownloadService.swift; sourceTree = "<group>"; };
+		A10000000000000000000011 /* SetupGuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupGuideView.swift; sourceTree = "<group>"; };
+		A10000000000000000000012 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A10000000000000000000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10000000000000000000014 /* WhisperDict.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WhisperDict.entitlements; sourceTree = "<group>"; };
+		A10000000000000000000015 /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
+		A10000000000000000000016 /* KeyboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardView.swift; sourceTree = "<group>"; };
+		A10000000000000000000018 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10000000000000000000019 /* WhisperDictKeyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WhisperDictKeyboard.entitlements; sourceTree = "<group>"; };
+		A10000000000000000000045 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A10000000000000000000050 /* DictationSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationSessionController.swift; sourceTree = "<group>"; };
+		A10000000000000000000051 /* DictationAudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationAudioRecorder.swift; sourceTree = "<group>"; };
+		A10000000000000000000052 /* DictationTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationTranscriber.swift; sourceTree = "<group>"; };
+		A10000000000000000000053 /* TranscriptCleaner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptCleaner.swift; sourceTree = "<group>"; };
+		A10000000000000000000054 /* TranscriptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptStore.swift; sourceTree = "<group>"; };
+		A10000000000000000000055 /* KeyboardLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardLayout.swift; sourceTree = "<group>"; };
+		A10000000000000000000065 /* AppearanceSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettings.swift; sourceTree = "<group>"; };
+		A1000000000000000000006B /* VoiceAgentSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAgentSession.swift; sourceTree = "<group>"; };
+		A1000000000000000000006C /* VoiceAgentController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAgentController.swift; sourceTree = "<group>"; };
+		A1000000000000000000006D /* VoiceAgentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAgentView.swift; sourceTree = "<group>"; };
+		B20000000000000000000010 /* WhisperDictLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WhisperDictLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B20000000000000000000011 /* BackgroundDictationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundDictationState.swift; sourceTree = "<group>"; };
+		B20000000000000000000012 /* WhisperDictActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperDictActivityAttributes.swift; sourceTree = "<group>"; };
+		B20000000000000000000013 /* BackgroundDictationIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundDictationIntent.swift; sourceTree = "<group>"; };
+		B20000000000000000000014 /* WhisperDictLiveActivityBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperDictLiveActivityBundle.swift; sourceTree = "<group>"; };
+		B20000000000000000000015 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B20000000000000000000016 /* WhisperDictLiveActivity.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WhisperDictLiveActivity.entitlements; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A1000000000000000000001A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000003 /* WhisperKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1000000000000000000001B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B20000000000000000000021 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A1000000000000000000001C /* WhisperDict */ = {
+			isa = PBXGroup;
+			children = (
+				A1000000000000000000000C /* WhisperDictApp.swift */,
+				A1000000000000000000000D /* ContentView.swift */,
+				A1000000000000000000000E /* SharedState.swift */,
+				A10000000000000000000010 /* ModelDownloadService.swift */,
+				A10000000000000000000011 /* SetupGuideView.swift */,
+				A10000000000000000000012 /* SettingsView.swift */,
+				A10000000000000000000050 /* DictationSessionController.swift */,
+				A10000000000000000000051 /* DictationAudioRecorder.swift */,
+				A10000000000000000000052 /* DictationTranscriber.swift */,
+				A1000000000000000000006C /* VoiceAgentController.swift */,
+				A1000000000000000000006D /* VoiceAgentView.swift */,
+				B20000000000000000000013 /* BackgroundDictationIntent.swift */,
+				A10000000000000000000013 /* Info.plist */,
+				A10000000000000000000014 /* WhisperDict.entitlements */,
+				A10000000000000000000045 /* Assets.xcassets */,
+			);
+			path = WhisperDict;
+			sourceTree = "<group>";
+		};
+		A1000000000000000000001D /* WhisperDictKeyboard */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000015 /* KeyboardViewController.swift */,
+				A10000000000000000000016 /* KeyboardView.swift */,
+				A10000000000000000000018 /* Info.plist */,
+				A10000000000000000000019 /* WhisperDictKeyboard.entitlements */,
+			);
+			path = WhisperDictKeyboard;
+			sourceTree = "<group>";
+		};
+		A1000000000000000000001E = {
+			isa = PBXGroup;
+			children = (
+				A1000000000000000000001C /* WhisperDict */,
+				A1000000000000000000001D /* WhisperDictKeyboard */,
+				B20000000000000000000022 /* WhisperDictLiveActivity */,
+				A10000000000000000000063 /* WhisperDictCore */,
+				A1000000000000000000001F /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A10000000000000000000063 /* WhisperDictCore */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000065 /* AppearanceSettings.swift */,
+				A10000000000000000000053 /* TranscriptCleaner.swift */,
+				A10000000000000000000054 /* TranscriptStore.swift */,
+				A10000000000000000000055 /* KeyboardLayout.swift */,
+				A1000000000000000000006B /* VoiceAgentSession.swift */,
+				B20000000000000000000011 /* BackgroundDictationState.swift */,
+				B20000000000000000000012 /* WhisperDictActivityAttributes.swift */,
+			);
+			path = Sources/WhisperDictCore;
+			sourceTree = SOURCE_ROOT;
+		};
+		A1000000000000000000001F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A1000000000000000000000B /* WhisperDict.app */,
+				A10000000000000000000002 /* WhisperDictKeyboard.appex */,
+				B20000000000000000000010 /* WhisperDictLiveActivity.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		B20000000000000000000022 /* WhisperDictLiveActivity */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000014 /* WhisperDictLiveActivityBundle.swift */,
+				B20000000000000000000015 /* Info.plist */,
+				B20000000000000000000016 /* WhisperDictLiveActivity.entitlements */,
+			);
+			path = WhisperDictLiveActivity;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A10000000000000000000009 /* WhisperDictKeyboard */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000025 /* Build configuration list for PBXNativeTarget "WhisperDictKeyboard" */;
+			buildPhases = (
+				A10000000000000000000026 /* Sources */,
+				A1000000000000000000001B /* Frameworks */,
+				A10000000000000000000027 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = WhisperDictKeyboard;
+			packageProductDependencies = (
+			);
+			productName = WhisperDictKeyboard;
+			productReference = A10000000000000000000002 /* WhisperDictKeyboard.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		A10000000000000000000020 /* WhisperDict */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000021 /* Build configuration list for PBXNativeTarget "WhisperDict" */;
+			buildPhases = (
+				A10000000000000000000022 /* Sources */,
+				A1000000000000000000001A /* Frameworks */,
+				A10000000000000000000023 /* Resources */,
+				A1000000000000000000000A /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A10000000000000000000024 /* PBXTargetDependency */,
+				B20000000000000000000031 /* PBXTargetDependency */,
+			);
+			name = WhisperDict;
+			packageProductDependencies = (
+				A10000000000000000000004 /* WhisperKit */,
+			);
+			productName = WhisperDict;
+			productReference = A1000000000000000000000B /* WhisperDict.app */;
+			productType = "com.apple.product-type.application";
+		};
+		B20000000000000000000030 /* WhisperDictLiveActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B20000000000000000000040 /* Build configuration list for PBXNativeTarget "WhisperDictLiveActivity" */;
+			buildPhases = (
+				B20000000000000000000023 /* Sources */,
+				B20000000000000000000021 /* Frameworks */,
+				B20000000000000000000024 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = WhisperDictLiveActivity;
+			packageProductDependencies = (
+			);
+			productName = WhisperDictLiveActivity;
+			productReference = B20000000000000000000010 /* WhisperDictLiveActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A10000000000000000000008 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2640;
+				LastUpgradeCheck = 2640;
+				TargetAttributes = {
+					A10000000000000000000009 = {
+						CreatedOnToolsVersion = 26.4;
+					};
+					A10000000000000000000020 = {
+						CreatedOnToolsVersion = 26.4;
+					};
+					B20000000000000000000030 = {
+						CreatedOnToolsVersion = 26.4;
+					};
+				};
+			};
+			buildConfigurationList = A10000000000000000000028 /* Build configuration list for PBXProject "WhisperDict" */;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A1000000000000000000001E;
+			packageReferences = (
+				A10000000000000000000029 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */,
+			);
+			productRefGroup = A1000000000000000000001F /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A10000000000000000000020 /* WhisperDict */,
+				A10000000000000000000009 /* WhisperDictKeyboard */,
+				B20000000000000000000030 /* WhisperDictLiveActivity */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A10000000000000000000023 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000044 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000027 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B20000000000000000000024 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A10000000000000000000022 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000000000000000000002A /* WhisperDictApp.swift in Sources */,
+				A1000000000000000000002B /* ContentView.swift in Sources */,
+				A1000000000000000000002C /* SharedState.swift in Sources */,
+				A1000000000000000000002E /* ModelDownloadService.swift in Sources */,
+				A1000000000000000000002F /* SetupGuideView.swift in Sources */,
+				A10000000000000000000030 /* SettingsView.swift in Sources */,
+				A10000000000000000000056 /* DictationSessionController.swift in Sources */,
+				A10000000000000000000057 /* DictationAudioRecorder.swift in Sources */,
+				A10000000000000000000058 /* DictationTranscriber.swift in Sources */,
+				A10000000000000000000059 /* TranscriptCleaner.swift in Sources */,
+				A10000000000000000000060 /* TranscriptStore.swift in Sources */,
+				A10000000000000000000066 /* AppearanceSettings.swift in Sources */,
+				A10000000000000000000068 /* VoiceAgentSession.swift in Sources */,
+				A10000000000000000000069 /* VoiceAgentController.swift in Sources */,
+				A1000000000000000000006A /* VoiceAgentView.swift in Sources */,
+				B20000000000000000000002 /* BackgroundDictationState.swift in Sources */,
+				B20000000000000000000005 /* WhisperDictActivityAttributes.swift in Sources */,
+				B20000000000000000000007 /* BackgroundDictationIntent.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000026 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000031 /* KeyboardViewController.swift in Sources */,
+				A10000000000000000000032 /* KeyboardView.swift in Sources */,
+				A10000000000000000000061 /* Keyboard TranscriptStore.swift in Sources */,
+				A10000000000000000000062 /* KeyboardLayout.swift in Sources */,
+				A10000000000000000000067 /* Keyboard AppearanceSettings.swift in Sources */,
+				B20000000000000000000003 /* Keyboard BackgroundDictationState.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B20000000000000000000023 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B20000000000000000000004 /* Activity BackgroundDictationState.swift in Sources */,
+				B20000000000000000000006 /* Activity WhisperDictActivityAttributes.swift in Sources */,
+				B20000000000000000000008 /* WhisperDictLiveActivityBundle.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A10000000000000000000024 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000009 /* WhisperDictKeyboard */;
+			targetProxy = A10000000000000000000007 /* PBXContainerItemProxy */;
+		};
+		B20000000000000000000031 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B20000000000000000000030 /* WhisperDictLiveActivity */;
+			targetProxy = B20000000000000000000020 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A10000000000000000000034 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A10000000000000000000035 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		A10000000000000000000036 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_ENTITLEMENTS = WhisperDict/WhisperDict.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = LLLBQA48R3;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = WhisperDict/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dmares06.whisperdict;
+				PRODUCT_NAME = WhisperDict;
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A10000000000000000000037 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_ENTITLEMENTS = WhisperDict/WhisperDict.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = LLLBQA48R3;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = WhisperDict/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dmares06.whisperdict;
+				PRODUCT_NAME = WhisperDict;
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		A10000000000000000000038 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = WhisperDictKeyboard/WhisperDictKeyboard.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = LLLBQA48R3;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = WhisperDictKeyboard/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dmares06.whisperdict.keyboard;
+				PRODUCT_NAME = WhisperDictKeyboard;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A10000000000000000000039 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = WhisperDictKeyboard/WhisperDictKeyboard.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = LLLBQA48R3;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = WhisperDictKeyboard/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dmares06.whisperdict.keyboard;
+				PRODUCT_NAME = WhisperDictKeyboard;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		B20000000000000000000041 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = WhisperDictLiveActivity/WhisperDictLiveActivity.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = LLLBQA48R3;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = WhisperDictLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dmares06.whisperdict.liveactivity;
+				PRODUCT_NAME = WhisperDictLiveActivity;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		B20000000000000000000042 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = WhisperDictLiveActivity/WhisperDictLiveActivity.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = LLLBQA48R3;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = WhisperDictLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dmares06.whisperdict.liveactivity;
+				PRODUCT_NAME = WhisperDictLiveActivity;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A10000000000000000000021 /* Build configuration list for PBXNativeTarget "WhisperDict" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000036 /* Debug */,
+				A10000000000000000000037 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000000025 /* Build configuration list for PBXNativeTarget "WhisperDictKeyboard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000038 /* Debug */,
+				A10000000000000000000039 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000000028 /* Build configuration list for PBXProject "WhisperDict" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000034 /* Debug */,
+				A10000000000000000000035 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B20000000000000000000040 /* Build configuration list for PBXNativeTarget "WhisperDictLiveActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B20000000000000000000041 /* Debug */,
+				B20000000000000000000042 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A10000000000000000000029 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/argmaxinc/argmax-oss-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A10000000000000000000004 /* WhisperKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000029 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */;
+			productName = WhisperKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = A10000000000000000000008 /* Project object */;
+}
