@@ -20,6 +20,10 @@ struct WhisperDictShortcuts: AppShortcutsProvider {
 struct WhisperDictApp: App {
     @State private var state = SharedState()
 
+    init() {
+        BackgroundDictationState.clearFailure()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

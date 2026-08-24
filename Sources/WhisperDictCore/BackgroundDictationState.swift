@@ -54,6 +54,15 @@ public enum BackgroundDictationState {
         return "WhisperDict couldn't start its recording indicator. Restart the iPhone, then try again."
     }
 
+    public static func clearFailure(defaults: UserDefaults? = sharedDefaults) {
+        guard defaults?.string(forKey: Keys.phase) == BackgroundDictationPhase.failed.rawValue else {
+            return
+        }
+        defaults?.removeObject(forKey: Keys.errorMessage)
+        defaults?.set(false, forKey: Keys.stopRequested)
+        setPhase(.idle, defaults: defaults)
+    }
+
     public static func setPhase(
         _ phase: BackgroundDictationPhase,
         defaults: UserDefaults? = sharedDefaults

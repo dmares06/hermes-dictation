@@ -68,4 +68,13 @@ final class BackgroundDictationStateTests: XCTestCase {
             "Enable Live Activities for WhisperDict in Settings, then try again."
         )
     }
+
+    func testClearFailureRemovesAStaleErrorWhenTheAppRelaunches() {
+        BackgroundDictationState.fail("Old failure", defaults: defaults)
+
+        BackgroundDictationState.clearFailure(defaults: defaults)
+
+        XCTAssertEqual(BackgroundDictationState.phase(defaults: defaults), .idle)
+        XCTAssertNil(defaults.string(forKey: BackgroundDictationState.Keys.errorMessage))
+    }
 }
