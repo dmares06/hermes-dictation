@@ -76,7 +76,9 @@ final class KeyboardViewController: UIInputViewController {
             keyboardState.handoffStatus = "Opening WhisperDict…"
             extensionContext?.open(url) { [weak self] opened in
                 guard !opened else { return }
-                self?.keyboardState.handoffStatus = "Open WhisperDict once, then try again."
+                Task { @MainActor [weak self] in
+                    self?.keyboardState.handoffStatus = "Press your iPhone Action Button to open WhisperDict and record."
+                }
             }
         }
         refreshBackgroundSession()

@@ -77,6 +77,61 @@ final class BackgroundDictationStateTests: XCTestCase {
         XCTAssertEqual(BackgroundDictationState.phase(defaults: defaults), .idle)
         XCTAssertNil(defaults.string(forKey: BackgroundDictationState.Keys.errorMessage))
     }
+
+    func testShortcutStartsRecordingThroughTheForegroundAppRoute() {
+        XCTAssertEqual(DictationLaunchRoute.recordingURL.scheme, "whisperdict")
+        XCTAssertEqual(DictationLaunchRoute.recordingURL.host, "record")
+        XCTAssertTrue(DictationLaunchRoute.isRecordingURL(DictationLaunchRoute.recordingURL))
+    }
+
+    func testShortcutStopsAnActiveRecordingThroughTheForegroundAppRoute() {
+        XCTAssertEqual(DictationLaunchRoute.stoppingURL.scheme, "whisperdict")
+        XCTAssertEqual(DictationLaunchRoute.stoppingURL.host, "stop")
+        XCTAssertTrue(DictationLaunchRoute.isStoppingURL(DictationLaunchRoute.stoppingURL))
+        XCTAssertFalse(DictationLaunchRoute.isRecordingURL(DictationLaunchRoute.stoppingURL))
+    }
+
+    func testUnrelatedDeepLinksDoNotStartRecording() throws {
+        let agentURL = try XCTUnwrap(URL(string: "whisperdict://agent"))
+
+        XCTAssertFalse(DictationLaunchRoute.isRecordingURL(agentURL))
+    }
+
+    func testForegroundRecordingPublishesLiveActivityPhases() {
+        let startedAt = Date(timeIntervalSince1970: 100)
+
+        XCTAssertEqual(
+            BackgroundDictationActivityContent.recording(startedAt: startedAt).phase,
+            .recording
+        )
+        XCTAssertEqual(
+            BackgroundDictationActivityContent.transcribing(startedAt: startedAt).phase,
+            .transcribing
+        )
+        XCTAssertEqual(
+            BackgroundDictationActivityContent.ready(startedAt: startedAt).phase,
+            .ready
+        )
+    }
+
+    func testShortcutRecordingRetainsTheFiveMinuteSafetyLimit() {
+        XCTAssertEqual(BackgroundDictationState.maximumRecordingDuration, 5 * 60)
+    }
+
+    func testAppLaunchRecoversAnInterruptedRecording() {
+        BackgroundDictationState.begin(defaults: defaults)
+
+        BackgroundDictationState.recoverInterruptedSession(defaults: defaults)
+
+        XCTAssertEqual(BackgroundDictationState.phase(defaults: defaults), .idle)
+        XCTAssertFalse(BackgroundDictationState.shouldStop(defaults: defaults))
+    }
+
+    func testOnlyNonemptyTranscriptsCanBePublishedToTheKeyboard() {
+        XCTAssertFalse(BackgroundDictationState.isPublishableTranscript(""))
+        XCTAssertFalse(BackgroundDictationState.isPublishableTranscript("  \n "))
+        XCTAssertTrue(BackgroundDictationState.isPublishableTranscript("Send this"))
+    }
 }
 
 final class KeyboardHandoffGuidanceTests: XCTestCase {

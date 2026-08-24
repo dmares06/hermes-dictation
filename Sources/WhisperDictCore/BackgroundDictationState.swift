@@ -9,8 +9,41 @@ public enum BackgroundDictationPhase: String, Sendable {
     case failed
 }
 
+public enum DictationLaunchRoute {
+    public static let recordingURL = URL(string: "whisperdict://record")!
+    public static let stoppingURL = URL(string: "whisperdict://stop")!
+
+    public static func isRecordingURL(_ url: URL) -> Bool {
+        url.scheme == recordingURL.scheme && url.host == recordingURL.host
+    }
+
+    public static func isStoppingURL(_ url: URL) -> Bool {
+        url.scheme == stoppingURL.scheme && url.host == stoppingURL.host
+    }
+}
+
+public struct BackgroundDictationActivityContentState: Equatable, Sendable {
+    public let phase: BackgroundDictationPhase
+    public let startedAt: Date
+}
+
+public enum BackgroundDictationActivityContent {
+    public static func recording(startedAt: Date) -> BackgroundDictationActivityContentState {
+        .init(phase: .recording, startedAt: startedAt)
+    }
+
+    public static func transcribing(startedAt: Date) -> BackgroundDictationActivityContentState {
+        .init(phase: .transcribing, startedAt: startedAt)
+    }
+
+    public static func ready(startedAt: Date) -> BackgroundDictationActivityContentState {
+        .init(phase: .ready, startedAt: startedAt)
+    }
+}
+
 public enum BackgroundDictationState {
     public static let appGroupID = "group.com.dmares06.whisperdict"
+    public static let maximumRecordingDuration: TimeInterval = 5 * 60
 
     public enum Keys {
         public static let phase = "backgroundDictationPhase"
@@ -61,6 +94,21 @@ public enum BackgroundDictationState {
         defaults?.removeObject(forKey: Keys.errorMessage)
         defaults?.set(false, forKey: Keys.stopRequested)
         setPhase(.idle, defaults: defaults)
+    }
+
+    public static func recoverInterruptedSession(defaults: UserDefaults? = sharedDefaults) {
+        switch phase(defaults: defaults) {
+        case .recording, .transcribing, .failed:
+            defaults?.removeObject(forKey: Keys.errorMessage)
+            defaults?.set(false, forKey: Keys.stopRequested)
+            setPhase(.idle, defaults: defaults)
+        case .idle, .ready:
+            break
+        }
+    }
+
+    public static func isPublishableTranscript(_ text: String) -> Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     public static func setPhase(

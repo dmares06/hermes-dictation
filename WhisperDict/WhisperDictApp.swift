@@ -21,7 +21,7 @@ struct WhisperDictApp: App {
     @State private var state = SharedState()
 
     init() {
-        BackgroundDictationState.clearFailure()
+        BackgroundDictationState.recoverInterruptedSession()
     }
 
     var body: some Scene {

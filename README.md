@@ -169,7 +169,7 @@ The iOS project is in `WhisperDict.xcodeproj/`. It contains:
 1. Open WhisperDict and prepare the selected model. `Small` is the default for the best available accuracy in this build.
 2. Tap the microphone, speak naturally, and tap Stop. The app writes audio to a temporary file so long recordings do not accumulate in RAM.
 3. Assign the **Start Dictation** WhisperDict shortcut to your iPhone Action Button in Settings → Action Button → Shortcut.
-4. In another app, switch to the WhisperDict keyboard and press and hold the physical Action Button. Speak naturally, then tap **Stop** on the keyboard, press the Action Button again, or use the Live Activity Stop button. Only that new transcript is inserted automatically.
+4. In another app, switch to the WhisperDict keyboard and press the physical Action Button. WhisperDict opens and starts recording; speak naturally, then tap **Stop**, press the Action Button again, or use the Live Activity Stop button. Return to the original app and tap the keyboard's insert button to insert only that new transcript.
 
 The recorder handles denied microphone permission, audio-session interruptions, disconnected audio routes, app backgrounding, missing models, and idle-time memory pressure. Transcript cleanup preserves meaningful uses such as “I like pizza” while removing hesitation sounds and clearly delimited filler phrases.
 
@@ -187,7 +187,7 @@ Email uses the iPhone's default mail app, so set Gmail as the default mail app i
 
 The typed action model, approval rules, security boundaries, test plan, and future expansion path are documented in [`docs/VOICE_AGENT_PLAN.md`](docs/VOICE_AGENT_PLAN.md).
 
-> iOS restriction: Apple does not allow custom keyboard extensions to access the microphone or reliably launch their containing app. The keyboard therefore shows Action Button guidance and can stop an active recording, while the physical Action Button, Siri, or Shortcuts starts WhisperDict's `AudioRecordingIntent` in the background. Third-party keyboards are unavailable in secure fields, phone-pad fields, and apps that disable custom keyboards.
+> iOS restriction: Apple does not allow custom keyboard extensions to access the microphone, and current iOS versions can reject audio-session activation from a background Shortcut. The keyboard therefore shows Action Button guidance, while the physical Action Button, Siri, or Shortcuts opens WhisperDict and starts recording in the foreground. Third-party keyboards are unavailable in secure fields, phone-pad fields, and apps that disable custom keyboards.
 
 Build source without signing profiles:
 

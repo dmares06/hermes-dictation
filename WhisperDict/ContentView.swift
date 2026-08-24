@@ -50,7 +50,13 @@ struct ContentView: View {
                 selectedTab = .agent
                 return
             }
-            guard url.host == "record" else { return }
+            if DictationLaunchRoute.isStoppingURL(url) {
+                selectedTab = .dictation
+                Task { await dictation.stopFromKeyboard(settings: settings) }
+                return
+            }
+            guard DictationLaunchRoute.isRecordingURL(url) else { return }
+            selectedTab = .dictation
             Task {
                 if !downloadService.isPrepared {
                     await downloadService.prepare(model: settings.modelSize)
@@ -61,7 +67,7 @@ struct ContentView: View {
                     )
                     return
                 }
-                await dictation.startFromKeyboard(settings: settings)
+                await dictation.toggleFromShortcut(settings: settings)
             }
         }
         .sheet(item: $messagePayload) { payload in
