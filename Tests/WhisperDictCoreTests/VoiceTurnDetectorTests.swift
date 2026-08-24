@@ -68,4 +68,32 @@ final class VoiceTurnDetectorTests: XCTestCase {
         _ = detector.observe(level: 0.20, at: 10.6)
         XCTAssertEqual(detector.observe(level: 0.01, at: 11.6), .finishTurn)
     }
+
+    func testDefaultDetectorTreatsQuietRoomNoiseAsSilenceAfterSpeech() {
+        var detector = VoiceTurnDetector()
+        detector.reset(at: 0)
+
+        XCTAssertEqual(detector.observe(level: 0.55, at: 0.2), .listening)
+        XCTAssertEqual(detector.observe(level: 0.50, at: 0.6), .listening)
+        XCTAssertEqual(detector.observe(level: 0.12, at: 1.0), .listening)
+        XCTAssertEqual(detector.observe(level: 0.12, at: 1.7), .finishTurn)
+    }
+
+    func testMaximumTurnDurationPreventsEndlessListeningInConstantNoise() {
+        var detector = VoiceTurnDetector(
+            configuration: .init(
+                speechThreshold: 0.10,
+                minimumSpeechDuration: 0.30,
+                endSilenceDuration: 1.0,
+                idleTimeout: 45,
+                maximumTurnDuration: 3.0
+            )
+        )
+        detector.reset(at: 0)
+
+        XCTAssertEqual(detector.observe(level: 0.30, at: 0.2), .listening)
+        XCTAssertEqual(detector.observe(level: 0.30, at: 0.6), .listening)
+        XCTAssertEqual(detector.observe(level: 0.30, at: 2.9), .listening)
+        XCTAssertEqual(detector.observe(level: 0.30, at: 3.0), .finishTurn)
+    }
 }

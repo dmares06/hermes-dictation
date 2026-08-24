@@ -48,4 +48,24 @@ final class BackgroundDictationStateTests: XCTestCase {
         )
         XCTAssertFalse(BackgroundDictationState.shouldStop(defaults: defaults))
     }
+
+    func testLiveActivityFailureMessageDoesNotBlameSettingsWhenAlreadyEnabled() {
+        XCTAssertEqual(
+            BackgroundDictationState.liveActivityFailureMessage(
+                activitiesEnabled: true,
+                requiresForegroundRetry: true
+            ),
+            "Open WhisperDict once, then run Start Dictation again."
+        )
+    }
+
+    func testLiveActivityFailureMessageExplainsDisabledSetting() {
+        XCTAssertEqual(
+            BackgroundDictationState.liveActivityFailureMessage(
+                activitiesEnabled: false,
+                requiresForegroundRetry: false
+            ),
+            "Enable Live Activities for WhisperDict in Settings, then try again."
+        )
+    }
 }

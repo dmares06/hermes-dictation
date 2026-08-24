@@ -40,6 +40,20 @@ public enum BackgroundDictationState {
         defaults?.bool(forKey: Keys.stopRequested) == true
     }
 
+
+    public static func liveActivityFailureMessage(
+        activitiesEnabled: Bool,
+        requiresForegroundRetry: Bool
+    ) -> String {
+        guard activitiesEnabled else {
+            return "Enable Live Activities for WhisperDict in Settings, then try again."
+        }
+        if requiresForegroundRetry {
+            return "Open WhisperDict once, then run Start Dictation again."
+        }
+        return "WhisperDict couldn't start its recording indicator. Restart the iPhone, then try again."
+    }
+
     public static func setPhase(
         _ phase: BackgroundDictationPhase,
         defaults: UserDefaults? = sharedDefaults

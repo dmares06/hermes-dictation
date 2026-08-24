@@ -12,17 +12,20 @@ public struct VoiceTurnDetector: Sendable {
         public let minimumSpeechDuration: TimeInterval
         public let endSilenceDuration: TimeInterval
         public let idleTimeout: TimeInterval
+        public let maximumTurnDuration: TimeInterval
 
         public init(
-            speechThreshold: Float = 0.08,
+            speechThreshold: Float = 0.18,
             minimumSpeechDuration: TimeInterval = 0.30,
             endSilenceDuration: TimeInterval = 1.10,
-            idleTimeout: TimeInterval = 45
+            idleTimeout: TimeInterval = 45,
+            maximumTurnDuration: TimeInterval = 20
         ) {
             self.speechThreshold = max(0, min(speechThreshold, 1))
             self.minimumSpeechDuration = max(0, minimumSpeechDuration)
             self.endSilenceDuration = max(0.1, endSilenceDuration)
             self.idleTimeout = max(1, idleTimeout)
+            self.maximumTurnDuration = max(1, maximumTurnDuration)
         }
     }
 
@@ -54,6 +57,12 @@ public struct VoiceTurnDetector: Sendable {
                 speechStartedAt = time
             }
             lastSpeechAt = time
+            if hasMinimumSpeech,
+               let turnStartedAt,
+               time - turnStartedAt >= configuration.maximumTurnDuration {
+                hasFinished = true
+                return .finishTurn
+            }
             return .listening
         }
 
@@ -76,5 +85,10 @@ public struct VoiceTurnDetector: Sendable {
             return .idleTimeout
         }
         return .listening
+    }
+
+    private var hasMinimumSpeech: Bool {
+        guard let speechStartedAt, let lastSpeechAt else { return false }
+        return lastSpeechAt - speechStartedAt + 0.000_001 >= configuration.minimumSpeechDuration
     }
 }

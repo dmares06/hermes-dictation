@@ -5,7 +5,7 @@ import Foundation
 import UIKit
 
 @available(iOS 18.0, *)
-struct StartWhisperDictIntent: AudioRecordingIntent {
+struct StartWhisperDictIntent: AudioRecordingIntent, LiveActivityIntent {
     static let title: LocalizedStringResource = "Start WhisperDict"
     static let description = IntentDescription("Toggles private on-device dictation without leaving the current app.")
 
@@ -56,7 +56,21 @@ private enum BackgroundDictationRunner {
                 style: .standard
             )
         } catch {
-            let message = "Enable Live Activities for WhisperDict, then try again."
+            let requiresForegroundRetry: Bool
+            if let authorizationError = error as? ActivityAuthorizationError {
+                switch authorizationError {
+                case .visibility, .missingProcessIdentifier:
+                    requiresForegroundRetry = true
+                default:
+                    requiresForegroundRetry = false
+                }
+            } else {
+                requiresForegroundRetry = false
+            }
+            let message = BackgroundDictationState.liveActivityFailureMessage(
+                activitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                requiresForegroundRetry: requiresForegroundRetry
+            )
             BackgroundDictationState.fail(message, defaults: defaults)
             return Result(transcript: "", message: message)
         }
