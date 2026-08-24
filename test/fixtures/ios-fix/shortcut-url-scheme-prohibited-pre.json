@@ -1,0 +1,7 @@
+{
+  "source": "user-reported physical iPhone state",
+  "entryPoint": "Action Button assigned to the Start WhisperDict shortcut action",
+  "observed": "The provided URL scheme 'whisperdict' is unsupported; launch is prohibited",
+  "rootCause": "StartWhisperDictIntent returns OpenURLIntent for whisperdict://record",
+  "expected": "The App Intent opens WhisperDict through openAppWhenRun and consumes one recording request from the App Group"
+}

@@ -51,6 +51,7 @@ public enum BackgroundDictationState {
         public static let startedAt = "backgroundDictationStartedAt"
         public static let errorMessage = "backgroundDictationError"
         public static let transcriptRevision = "backgroundDictationTranscriptRevision"
+        public static let foregroundToggleRequest = "backgroundDictationForegroundToggleRequest"
     }
 
     public static func phase(defaults: UserDefaults? = sharedDefaults) -> BackgroundDictationPhase {
@@ -67,6 +68,16 @@ public enum BackgroundDictationState {
 
     public static func requestStop(defaults: UserDefaults? = sharedDefaults) {
         defaults?.set(true, forKey: Keys.stopRequested)
+    }
+
+    public static func requestForegroundToggle(defaults: UserDefaults? = sharedDefaults) {
+        defaults?.set(UUID().uuidString, forKey: Keys.foregroundToggleRequest)
+    }
+
+    public static func consumeForegroundToggleRequest(defaults: UserDefaults? = sharedDefaults) -> Bool {
+        guard defaults?.string(forKey: Keys.foregroundToggleRequest) != nil else { return false }
+        defaults?.removeObject(forKey: Keys.foregroundToggleRequest)
+        return true
     }
 
     public static func shouldStop(defaults: UserDefaults? = sharedDefaults) -> Bool {

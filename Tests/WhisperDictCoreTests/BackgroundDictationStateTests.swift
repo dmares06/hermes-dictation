@@ -84,6 +84,13 @@ final class BackgroundDictationStateTests: XCTestCase {
         XCTAssertTrue(DictationLaunchRoute.isRecordingURL(DictationLaunchRoute.recordingURL))
     }
 
+    func testShortcutForegroundToggleRequestIsConsumedExactlyOnce() {
+        BackgroundDictationState.requestForegroundToggle(defaults: defaults)
+
+        XCTAssertTrue(BackgroundDictationState.consumeForegroundToggleRequest(defaults: defaults))
+        XCTAssertFalse(BackgroundDictationState.consumeForegroundToggleRequest(defaults: defaults))
+    }
+
     func testShortcutStopsAnActiveRecordingThroughTheForegroundAppRoute() {
         XCTAssertEqual(DictationLaunchRoute.stoppingURL.scheme, "whisperdict")
         XCTAssertEqual(DictationLaunchRoute.stoppingURL.host, "stop")

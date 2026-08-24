@@ -20,6 +20,10 @@ struct ContentView: View {
     @State private var copiedText = ""
     @State private var selectedTab: RootTab = .dictation
     @State private var messagePayload: MessageComposePayload?
+    @AppStorage(
+        BackgroundDictationState.Keys.foregroundToggleRequest,
+        store: BackgroundDictationState.sharedDefaults
+    ) private var foregroundToggleRequest = ""
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -33,7 +37,10 @@ struct ContentView: View {
         }
         .tint(.mint)
         .onChange(of: scenePhase) { _, newPhase in
-            guard newPhase != .active else { return }
+            if newPhase == .active {
+                handlePendingShortcutToggle()
+                return
+            }
             Task {
                 if !dictation.isKeyboardHandoffSession {
                     await dictation.stopIfNeeded(settings: settings)
@@ -43,6 +50,11 @@ struct ContentView: View {
         }
         .onAppear {
             downloadService.refresh(for: settings.modelSize)
+            handlePendingShortcutToggle()
+        }
+        .onChange(of: foregroundToggleRequest) { _, request in
+            guard !request.isEmpty else { return }
+            handlePendingShortcutToggle()
         }
         .onOpenURL { url in
             guard url.scheme == "whisperdict" else { return }
@@ -56,22 +68,31 @@ struct ContentView: View {
                 return
             }
             guard DictationLaunchRoute.isRecordingURL(url) else { return }
-            selectedTab = .dictation
-            Task {
-                if !downloadService.isPrepared {
-                    await downloadService.prepare(model: settings.modelSize)
-                }
-                guard downloadService.isPrepared else {
-                    BackgroundDictationState.fail(
-                        downloadService.errorMessage ?? "Prepare the speech model in WhisperDict before recording."
-                    )
-                    return
-                }
-                await dictation.toggleFromShortcut(settings: settings)
-            }
+            runShortcutToggle()
         }
         .sheet(item: $messagePayload) { payload in
             MessageComposeView(body: payload.body)
+        }
+    }
+
+    private func handlePendingShortcutToggle() {
+        guard BackgroundDictationState.consumeForegroundToggleRequest() else { return }
+        runShortcutToggle()
+    }
+
+    private func runShortcutToggle() {
+        selectedTab = .dictation
+        Task {
+            if !downloadService.isPrepared {
+                await downloadService.prepare(model: settings.modelSize)
+            }
+            guard downloadService.isPrepared else {
+                BackgroundDictationState.fail(
+                    downloadService.errorMessage ?? "Prepare the speech model in WhisperDict before recording."
+                )
+                return
+            }
+            await dictation.toggleFromShortcut(settings: settings)
         }
     }
 
