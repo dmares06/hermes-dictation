@@ -154,3 +154,56 @@ The app needs two permissions on first run:
 | `build_app.sh` | Build macOS .app bundle |
 | `~/.config/hermes-dictation/config.json` | Persistent config |
 | `~/.cache/whisper/` and `~/.cache/huggingface/` | Whisper model caches |
+
+## iOS app
+
+The iOS project is in `WhisperDict.xcodeproj/`. It contains:
+
+- `WhisperDict` — records from the iPhone microphone, transcribes locally with WhisperKit, removes configurable filler words, and keeps recent transcripts
+- `WhisperDictKeyboard` — a lightweight QWERTY/numeric keyboard that can insert the latest transcript from the app
+- `Hermes Agent` — a one-tap conversational tab that detects the end of each spoken turn, answers aloud, listens again, and waits for explicit approval before external handoffs
+- WhisperKit 1.x — on-device Core ML transcription
+
+### iPhone workflow
+
+1. Open WhisperDict and prepare the selected model. `Small` is the default for the best available accuracy in this build.
+2. Tap the microphone, speak naturally, and tap Stop. The app writes audio to a temporary file so long recordings do not accumulate in RAM.
+3. Assign the **Start Dictation** WhisperDict shortcut to your iPhone Action Button in Settings → Action Button → Shortcut.
+4. In another app, switch to the WhisperDict keyboard and press the physical Action Button. WhisperDict opens and starts recording; speak naturally, then tap **Stop**, press the Action Button again, or use the Live Activity Stop button. Return to the original app and tap the keyboard's insert button to insert only that new transcript.
+
+The recorder handles denied microphone permission, audio-session interruptions, disconnected audio routes, app backgrounding, missing models, and idle-time memory pressure. Transcript cleanup preserves meaningful uses such as “I like pizza” while removing hesitation sounds and clearly delimited filler phrases.
+
+### Voice agent workflow
+
+Tap the Agent microphone once to start. Speak naturally and pause when a turn is complete; Hermes transcribes locally, answers aloud, then starts listening for the next turn automatically. Tap the red Stop button to end the conversation. This is automatic alternating turn-taking, not simultaneous full-duplex audio.
+
+The **Agent** tab supports these on-device conversations:
+
+- “Compose an email” → speak one recipient, a subject, and the body → review the exact draft → say **confirm** or tap **Open email draft**
+- “Create a note” → speak the note → review it → say **confirm** or tap **Share note**, then choose Notes
+- “Open Gmail” or “Open Settings” → review the destination → confirm before leaving Hermes
+
+Email uses the iPhone's default mail app, so set Gmail as the default mail app if you want drafts to open there. Hermes never presses Send or saves a note itself. iOS does not let third-party apps inspect or control another app's interface; the conversation stays in Hermes until a standard system handoff opens, and listening ends before that handoff.
+
+The typed action model, approval rules, security boundaries, test plan, and future expansion path are documented in [`docs/VOICE_AGENT_PLAN.md`](docs/VOICE_AGENT_PLAN.md).
+
+> iOS restriction: Apple does not allow custom keyboard extensions to access the microphone, and current iOS versions can reject audio-session activation from a background Shortcut. The keyboard therefore shows Action Button guidance, while the physical Action Button, Siri, or Shortcuts opens WhisperDict and starts recording in the foreground. Third-party keyboards are unavailable in secure fields, phone-pad fields, and apps that disable custom keyboards.
+
+Build source without signing profiles:
+
+```bash
+xcodebuild -scheme WhisperDict \
+  -project WhisperDict.xcodeproj \
+  -derivedDataPath .build/DerivedData \
+  -clonedSourcePackagesDirPath .build/SourcePackages \
+  -destination 'generic/platform=iOS' \
+  CODE_SIGNING_ALLOWED=NO build
+```
+
+Run the core behavior tests with:
+
+```bash
+swift test
+```
+
+To install on a physical iPhone, the project needs an Apple Developer team with App IDs for `com.dmares06.whisperdict`, `com.dmares06.whisperdict.keyboard`, and `com.dmares06.whisperdict.liveactivity`, the shared App Group `group.com.dmares06.whisperdict`, and a connected device. Automatic signing can create the development profiles.

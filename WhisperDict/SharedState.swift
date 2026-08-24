@@ -1,0 +1,77 @@
+import Foundation
+import Observation
+
+@Observable
+final class SharedState {
+    static let appGroupID = "group.com.dmares06.whisperdict"
+
+    private let defaults: UserDefaults
+    private let appearanceStore: AppearanceStore
+
+    var modelSize: ModelSize {
+        didSet { defaults.set(modelSize.rawValue, forKey: Keys.modelSize) }
+    }
+    var removeFillers: Bool {
+        didSet { defaults.set(removeFillers, forKey: Keys.removeFillers) }
+    }
+    var autoPunctuate: Bool {
+        didSet { defaults.set(autoPunctuate, forKey: Keys.autoPunctuate) }
+    }
+    var autoCapitalize: Bool {
+        didSet { defaults.set(autoCapitalize, forKey: Keys.autoCapitalize) }
+    }
+    var welcomeDone: Bool {
+        didSet { defaults.set(welcomeDone, forKey: Keys.welcomeDone) }
+    }
+    var keyboardColor: AppearanceColor {
+        didSet { appearanceStore.keyboardColor = keyboardColor }
+    }
+    var recordButtonColor: AppearanceColor {
+        didSet { appearanceStore.recordButtonColor = recordButtonColor }
+    }
+
+    var modelFolderPath: String? {
+        defaults.string(forKey: Keys.modelFolderPath)
+    }
+
+    init(defaults: UserDefaults? = UserDefaults(suiteName: SharedState.appGroupID)) {
+        self.defaults = defaults ?? .standard
+        self.appearanceStore = AppearanceStore(defaults: self.defaults)
+        self.modelSize = ModelSize(rawValue: self.defaults.string(forKey: Keys.modelSize) ?? "small") ?? .small
+        self.removeFillers = self.defaults.object(forKey: Keys.removeFillers) as? Bool ?? true
+        self.autoPunctuate = self.defaults.object(forKey: Keys.autoPunctuate) as? Bool ?? true
+        self.autoCapitalize = self.defaults.object(forKey: Keys.autoCapitalize) as? Bool ?? true
+        self.welcomeDone = self.defaults.bool(forKey: Keys.welcomeDone)
+        self.keyboardColor = self.appearanceStore.keyboardColor
+        self.recordButtonColor = self.appearanceStore.recordButtonColor
+    }
+
+    func resetAppearance() {
+        appearanceStore.reset()
+        keyboardColor = .defaultKeyboard
+        recordButtonColor = .defaultRecordButton
+    }
+
+    private enum Keys {
+        static let modelSize = "modelSize"
+        static let removeFillers = "removeFillers"
+        static let autoPunctuate = "autoPunctuate"
+        static let autoCapitalize = "autoCapitalize"
+        static let welcomeDone = "welcomeDone"
+        static let modelFolderPath = "modelFolderPath"
+    }
+}
+
+enum ModelSize: String, CaseIterable, Identifiable {
+    case tiny, base, small
+
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+    var detail: String {
+        switch self {
+        case .tiny: "Fastest · ~150 MB"
+        case .base: "Balanced · ~300 MB"
+        case .small: "Most accurate · ~600 MB"
+        }
+    }
+}

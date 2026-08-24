@@ -1,0 +1,15 @@
+{
+  "capturedAt": "2026-08-24T15:33:41-04:00",
+  "device": "iPhone (153)",
+  "appGroup": "group.com.dmares06.whisperdict",
+  "state": {
+    "backgroundDictationError": "Session activation failed",
+    "backgroundDictationPhase": "failed",
+    "backgroundDictationStopRequested": false,
+    "modelDownloaded": true,
+    "preparedModelSize": "small",
+    "welcomeDone": true
+  },
+  "problem": "The Start Dictation Shortcut attempts to activate a new microphone session while WhisperDict is backgrounded.",
+  "expected": "The Shortcut foregrounds WhisperDict first, then the app starts recording through whisperdict://record."
+}
