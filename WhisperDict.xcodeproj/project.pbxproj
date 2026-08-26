@@ -41,6 +41,7 @@
 		B20000000000000000000008 /* WhisperDictLiveActivityBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000014 /* WhisperDictLiveActivityBundle.swift */; };
 		B40000000000000000000001 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40000000000000000000011 /* OnboardingView.swift */; };
 		B50000000000000000000001 /* KeyboardTextProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B50000000000000000000011 /* KeyboardTextProcessor.swift */; };
+		B80000000000000000000001 /* MessageRecipients.swift in Sources */ = {isa = PBXBuildFile; fileRef = B80000000000000000000011 /* MessageRecipients.swift */; };
 		B60000000000000000000001 /* RealtimeAgentClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60000000000000000000011 /* RealtimeAgentClient.swift */; };
 		B60000000000000000000002 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = B60000000000000000000031 /* WebRTC */; };
 		B70000000000000000000001 /* HermesConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B70000000000000000000011 /* HermesConversationStore.swift */; };
@@ -114,6 +115,7 @@
 		B20000000000000000000016 /* WhisperDictLiveActivity.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WhisperDictLiveActivity.entitlements; sourceTree = "<group>"; };
 		B40000000000000000000011 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		B50000000000000000000011 /* KeyboardTextProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardTextProcessor.swift; sourceTree = "<group>"; };
+		B80000000000000000000011 /* MessageRecipients.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageRecipients.swift; sourceTree = "<group>"; };
 		B60000000000000000000011 /* RealtimeAgentClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeAgentClient.swift; sourceTree = "<group>"; };
 		B70000000000000000000011 /* HermesConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesConversationStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -200,6 +202,7 @@
 				A10000000000000000000054 /* TranscriptStore.swift */,
 				A10000000000000000000055 /* KeyboardLayout.swift */,
 				B50000000000000000000011 /* KeyboardTextProcessor.swift */,
+				B80000000000000000000011 /* MessageRecipients.swift */,
 				A1000000000000000000006B /* VoiceAgentSession.swift */,
 				A1000000000000000000006F /* VoiceTurnDetector.swift */,
 				B20000000000000000000011 /* BackgroundDictationState.swift */,
@@ -390,6 +393,7 @@
 				B20000000000000000000005 /* WhisperDictActivityAttributes.swift in Sources */,
 				B20000000000000000000007 /* BackgroundDictationIntent.swift in Sources */,
 				B40000000000000000000001 /* OnboardingView.swift in Sources */,
+				B80000000000000000000001 /* MessageRecipients.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

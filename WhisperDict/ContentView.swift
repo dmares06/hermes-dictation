@@ -4,6 +4,10 @@ import MessageUI
 struct MessageComposePayload: Identifiable {
     let id = UUID()
     let body: String
+    /// Pre-addresses the compose sheet so dictating into Messages does not
+    /// mean returning to the app and retyping a name. Empty is valid: the
+    /// sheet then opens with the text and an empty To field.
+    var recipients: [String] = []
 }
 
 struct ContentView: View {
@@ -78,7 +82,7 @@ struct ContentView: View {
             runShortcutToggle()
         }
         .sheet(item: $messagePayload) { payload in
-            MessageComposeView(body: payload.body)
+            MessageComposeView(body: payload.body, recipients: payload.recipients)
         }
     }
 
@@ -125,7 +129,10 @@ struct ContentView: View {
                             copied: copiedText == dictation.transcript,
                             copyAction: { copy(dictation.transcript) },
                             messageAction: {
-                                messagePayload = MessageComposePayload(body: dictation.transcript)
+                                messagePayload = MessageComposePayload(
+                                    body: dictation.transcript,
+                                    recipients: settings.messageRecipients
+                                )
                             }
                         )
                     }
@@ -352,6 +359,7 @@ private struct TranscriptCard: View {
 
 struct MessageComposeView: UIViewControllerRepresentable {
     let body: String
+    var recipients: [String] = []
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -363,6 +371,9 @@ struct MessageComposeView: UIViewControllerRepresentable {
         }
         let controller = MFMessageComposeViewController()
         controller.body = body
+        if !recipients.isEmpty {
+            controller.recipients = recipients
+        }
         controller.messageComposeDelegate = context.coordinator
         return controller
     }

@@ -73,7 +73,7 @@ struct VoiceAgentView: View {
                 ActivityView(items: [payload.text])
             }
             .sheet(item: $controller.messagePayload) { payload in
-                MessageComposeView(body: payload.body)
+                MessageComposeView(body: payload.body, recipients: payload.recipients)
             }
         }
     }

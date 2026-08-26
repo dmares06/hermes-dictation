@@ -23,6 +23,11 @@ final class SharedState {
     var welcomeDone: Bool {
         didSet { defaults.set(welcomeDone, forKey: Keys.welcomeDone) }
     }
+    /// Phone number or iMessage address the compose sheet is pre-addressed to.
+    /// Empty means the user picks a recipient each time.
+    var defaultMessageRecipient: String {
+        didSet { defaults.set(defaultMessageRecipient, forKey: Keys.defaultMessageRecipient) }
+    }
     var keyboardColor: AppearanceColor {
         didSet { appearanceStore.keyboardColor = keyboardColor }
     }
@@ -34,6 +39,12 @@ final class SharedState {
         defaults.string(forKey: Keys.modelFolderPath)
     }
 
+    /// `defaultMessageRecipient` as the compose sheet wants it: one entry, or
+    /// none at all when the user has not set a recipient.
+    var messageRecipients: [String] {
+        MessageRecipients.normalize(defaultMessageRecipient)
+    }
+
     init(defaults: UserDefaults? = UserDefaults(suiteName: SharedState.appGroupID)) {
         self.defaults = defaults ?? .standard
         self.appearanceStore = AppearanceStore(defaults: self.defaults)
@@ -42,6 +53,7 @@ final class SharedState {
         self.autoPunctuate = self.defaults.object(forKey: Keys.autoPunctuate) as? Bool ?? true
         self.autoCapitalize = self.defaults.object(forKey: Keys.autoCapitalize) as? Bool ?? true
         self.welcomeDone = self.defaults.bool(forKey: Keys.welcomeDone)
+        self.defaultMessageRecipient = self.defaults.string(forKey: Keys.defaultMessageRecipient) ?? ""
         self.keyboardColor = self.appearanceStore.keyboardColor
         self.recordButtonColor = self.appearanceStore.recordButtonColor
     }
@@ -58,6 +70,7 @@ final class SharedState {
         static let autoPunctuate = "autoPunctuate"
         static let autoCapitalize = "autoCapitalize"
         static let welcomeDone = "welcomeDone"
+        static let defaultMessageRecipient = "defaultMessageRecipient"
         static let modelFolderPath = "modelFolderPath"
     }
 }

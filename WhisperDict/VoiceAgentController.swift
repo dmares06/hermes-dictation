@@ -453,7 +453,10 @@ final class VoiceAgentController {
         case .shareNote(let text):
             sharePayload = VoiceAgentSharePayload(text: text)
         case .composeMessage(let text):
-            messagePayload = MessageComposePayload(body: text)
+            messagePayload = MessageComposePayload(
+                body: text,
+                recipients: conversationSettings?.messageRecipients ?? []
+            )
         case .open(.gmailWeb):
             guard let url = URL(string: "https://mail.google.com/") else { return }
             await open(url, failureMessage: "I couldn't open Gmail in your browser.")
