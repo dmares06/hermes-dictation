@@ -1,0 +1,36 @@
+name: iOS
+
+on:
+  push:
+    branches: [main, "claude/**", "feat/**", "fix/**"]
+  pull_request:
+
+jobs:
+  core-tests:
+    name: WhisperDictCore tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run swift test
+        run: swift test
+
+  build-app:
+    name: Build iOS app (unsigned)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: .build/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('WhisperDict.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+      - name: Build WhisperDict for generic iOS device
+        run: |
+          set -o pipefail
+          xcodebuild -scheme WhisperDict \
+            -project WhisperDict.xcodeproj \
+            -derivedDataPath .build/DerivedData \
+            -clonedSourcePackagesDirPath .build/SourcePackages \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO build
