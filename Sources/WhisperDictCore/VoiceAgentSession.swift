@@ -6,6 +6,29 @@ public enum VoiceAgentLimits {
     public static let emailBody = 4_000
     public static let note = 8_000
     public static let message = 4_000
+    public static let shortcutName = 100
+}
+
+public enum VoiceAgentPrimaryAction: Equatable, Sendable {
+    case startConversation
+    case finishTurn
+    case wait
+}
+
+public enum VoiceAgentControlPolicy {
+    public static func primaryAction(
+        conversationActive: Bool,
+        recording: Bool,
+        busy: Bool
+    ) -> VoiceAgentPrimaryAction {
+        if conversationActive && recording {
+            return .finishTurn
+        }
+        if conversationActive || busy {
+            return .wait
+        }
+        return .startConversation
+    }
 }
 
 public struct EmailAddress: Equatable, Sendable {
@@ -70,6 +93,11 @@ public struct EmailDraft: Equatable, Sendable {
 public enum VoiceAgentDestination: String, Equatable, Sendable {
     case gmailWeb
     case appSettings
+    case maps
+    case calendar
+    case music
+    case youtube
+    case spotify
 }
 
 public enum VoiceAgentAction: Equatable, Sendable {
@@ -77,14 +105,101 @@ public enum VoiceAgentAction: Equatable, Sendable {
     case composeEmail(EmailDraft)
     case shareNote(String)
     case composeMessage(String)
+    case runShortcut(String)
 
     public var reviewTitle: String {
         switch self {
         case .open(.gmailWeb): "Open Gmail"
         case .open(.appSettings): "Open Settings"
+        case .open(.maps): "Open Maps"
+        case .open(.calendar): "Open Calendar"
+        case .open(.music): "Open Music"
+        case .open(.youtube): "Open YouTube"
+        case .open(.spotify): "Open Spotify"
         case .composeEmail: "Email draft"
         case .shareNote: "Note"
         case .composeMessage: "Message draft"
+        case .runShortcut(let name): "Run \(name)"
+        }
+    }
+
+    public static func validatedMessage(_ body: String) -> VoiceAgentAction? {
+        guard let body = boundedText(body, limit: VoiceAgentLimits.message) else { return nil }
+        return .composeMessage(body)
+    }
+
+    public static func validatedEmail(
+        recipient: String,
+        subject: String,
+        body: String
+    ) -> VoiceAgentAction? {
+        guard let address = EmailAddress(spoken: recipient),
+              let subject = boundedText(subject, limit: VoiceAgentLimits.emailSubject),
+              let body = boundedText(body, limit: VoiceAgentLimits.emailBody)
+        else { return nil }
+        return .composeEmail(EmailDraft(recipient: address.value, subject: subject, body: body))
+    }
+
+    public static func validatedNote(_ body: String) -> VoiceAgentAction? {
+        guard let body = boundedText(body, limit: VoiceAgentLimits.note) else { return nil }
+        return .shareNote(body)
+    }
+
+    public static func validatedDestination(_ value: String) -> VoiceAgentAction? {
+        let destination: VoiceAgentDestination
+        switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "gmail": destination = .gmailWeb
+        case "settings": destination = .appSettings
+        case "maps": destination = .maps
+        case "calendar": destination = .calendar
+        case "music": destination = .music
+        case "youtube": destination = .youtube
+        case "spotify": destination = .spotify
+        default: return nil
+        }
+        return .open(destination)
+    }
+
+    public static func validatedShortcut(_ name: String) -> VoiceAgentAction? {
+        guard let name = boundedText(name, limit: VoiceAgentLimits.shortcutName),
+              !name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+        else { return nil }
+        return .runShortcut(name)
+    }
+
+    private static func boundedText(_ value: String, limit: Int) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              trimmed.count <= limit,
+              !trimmed.unicodeScalars.contains(where: {
+                  CharacterSet.controlCharacters.contains($0) && $0 != "\n" && $0 != "\t"
+              })
+        else { return nil }
+        return trimmed
+    }
+}
+
+public enum VoiceAgentApprovalDecision: Equatable, Sendable {
+    case confirm
+    case cancel
+
+    public init?(spoken input: String) {
+        let normalized = input
+            .lowercased()
+            .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: "’", with: "")
+            .replacingOccurrences(of: #"[\p{P}\p{S}]+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+
+        let confirmations = ["confirm", "yes confirm", "yes open it", "open it", "go ahead", "do it"]
+        let cancellations = ["cancel", "no cancel", "no dont open it", "dont open it", "never mind", "stop"]
+        if confirmations.contains(normalized) {
+            self = .confirm
+        } else if cancellations.contains(normalized) {
+            self = .cancel
+        } else {
+            return nil
         }
     }
 }
@@ -203,10 +318,22 @@ public struct VoiceAgentSession: Sendable {
             message = "Opening the share sheet. Choose Notes, then save it there."
         case .composeMessage:
             message = "Opening a message draft. Choose the recipient, review it, and tap Send when you are ready."
+        case .runShortcut(let name):
+            message = "Opening Shortcuts to run \(name)."
         case .open(.gmailWeb):
             message = "Opening Gmail in your browser."
         case .open(.appSettings):
             message = "Opening Settings."
+        case .open(.maps):
+            message = "Opening Maps."
+        case .open(.calendar):
+            message = "Opening Calendar."
+        case .open(.music):
+            message = "Opening Music."
+        case .open(.youtube):
+            message = "Opening YouTube."
+        case .open(.spotify):
+            message = "Opening Spotify."
         }
         return VoiceAgentTurn(assistantMessage: message, action: action)
     }
@@ -255,9 +382,35 @@ public struct VoiceAgentSession: Sendable {
                 assistantMessage: "I can open this app's Settings page. Say confirm to continue."
             )
         }
+        let appDestinations: [(terms: [String], destination: VoiceAgentDestination)] = [
+            (["maps", "map"], .maps),
+            (["calendar"], .calendar),
+            (["apple music", "music"], .music),
+            (["youtube"], .youtube),
+            (["spotify"], .spotify),
+        ]
+        if Self.containsAny(intent, phrases: ["open", "show", "go to", "launch"]),
+           let match = appDestinations.first(where: { entry in
+               entry.terms.contains(where: intent.contains)
+           }) {
+            let action = VoiceAgentAction.open(match.destination)
+            state = .confirmation(action)
+            return VoiceAgentTurn(
+                assistantMessage: "I can \(action.reviewTitle.lowercased()). Say confirm to continue."
+            )
+        }
+        if intent.hasPrefix("run shortcut ") {
+            let name = String(intent.dropFirst("run shortcut ".count))
+            if let action = VoiceAgentAction.validatedShortcut(name) {
+                state = .confirmation(action)
+                return VoiceAgentTurn(
+                    assistantMessage: "I can run the \(name) shortcut. Say confirm to continue."
+                )
+            }
+        }
 
         return VoiceAgentTurn(
-            assistantMessage: "I can't do that safely yet. Try send a message, compose an email, create a note, open Gmail, or open Settings."
+            assistantMessage: "I can't do that safely yet. Try send a message, compose an email, create a note, or open a supported app."
         )
     }
 

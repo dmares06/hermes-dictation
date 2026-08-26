@@ -1,0 +1,18 @@
+{
+  "bug": "keyboard-action-button-noop",
+  "source": "physical iPhone custom keyboard",
+  "trigger": "Tap the keyboard control labeled Action Button while dictation is idle or ready",
+  "observed": {
+    "buttonTitle": "Action Button",
+    "action": "Only repeats the idle guidance text",
+    "navigation": "No navigation occurs",
+    "recording": "No recording starts"
+  },
+  "expected": {
+    "buttonTitle": "Press Side Button",
+    "guidance": "Tell the user to press and hold the physical iPhone Action Button",
+    "interaction": "Do not expose an idle in-keyboard tap target",
+    "navigation": "Keep the user in the current host app",
+    "recording": "The assigned Start Dictation App Shortcut records in the background and the keyboard inserts its result"
+  }
+}

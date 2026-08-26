@@ -2,14 +2,14 @@
 
 ## Product outcome
 
-Add a hands-free, conversational workspace to the iPhone app. One tap starts a foreground conversation: Hermes detects when the person finishes speaking, transcribes the turn on-device, responds aloud, and automatically listens again. It prepares only allowlisted actions and waits for a one-time confirmation before handing anything to another app.
+Add a hands-free, conversational workspace to the iPhone app. One tap starts a foreground OpenAI Realtime speech-to-speech conversation with semantic turn detection and interruption support. If Realtime is unavailable, Hermes falls back to the existing on-device turn-taking loop. It prepares only allowlisted actions and waits for a one-time confirmation before handing anything to another app.
 
 The first release supports two complete journeys:
 
 1. Compose an email by voice, review the recipient, subject, and body in Hermes, then open the draft in the iPhone's default mail app. Gmail is supported when the person sets Gmail as their default mail app.
 2. Create a note by voice, review it in Hermes, then open the system share sheet and explicitly choose Notes.
 
-Hermes also recognizes requests to open Gmail on the web and Settings. An "open Notes" request safely starts the create-note flow because iOS provides no public API for controlling the Notes app. Navigation actions still show what will happen before leaving Hermes.
+Hermes also recognizes requests to open Gmail, Maps, Calendar, Music, YouTube, Spotify, and Settings. Existing Apple Shortcuts provide the extensibility layer for other apps and multi-app workflows. An "open Notes" request safely starts the create-note flow because iOS provides no public API for controlling the Notes app. Navigation actions still show what will happen before leaving Hermes.
 
 ## Platform boundary
 
@@ -18,9 +18,11 @@ iOS sandboxes third-party apps. Hermes cannot inspect Gmail or Notes, tap their 
 The safe in-app interaction is therefore:
 
 ```text
-tap once -> listen -> detect pause -> local transcript -> deterministic plan -> speak -> listen again
-                                                        |
-                                                        +-> visible review -> confirm once -> system handoff
+tap once -> Realtime speech-to-speech conversation -> typed tool proposal
+                                                   |
+                                                   +-> local validation -> visible review
+                                                                      |
+                                                                      +-> confirm once -> system handoff
 ```
 
 The red Stop button ends the conversation at any point. A confirmed external handoff ends listening before iOS opens the destination. Hermes never sends an email or saves an Apple Note itself; the destination app presents its own final send or save control.
@@ -65,6 +67,7 @@ The recipient must parse as a bounded email address before the action can become
 ### iOS app
 
 - `VoiceAgentController`: keeps the one-tap foreground conversation loop alive, records with the existing local recorder, transcribes with the existing Whisper model, feeds text into `VoiceAgentSession`, speaks responses with `AVSpeechSynthesizer`, and resumes listening.
+- `RealtimeAgentClient`: creates the native WebRTC audio session through the protected backend, streams conversation transcripts into the UI, and converts only allowlisted function calls into locally validated action proposals.
 - `VoiceAgentView`: conversation transcript, recording state, draft preview, and explicit confirm/cancel controls.
 - The controller's closed action executor converts only validated action values into `UIApplication.open` or a system share sheet.
 - `ContentView`: keeps dictation intact and adds an Agent tab.
@@ -80,7 +83,7 @@ The recipient must parse as a bounded email address before the action can become
 - Encode mail fields with `URLComponents`; never concatenate untrusted input into a URL.
 - Do not log or persist email recipients, subjects, bodies, notes, or spoken responses.
 - Stop recording when the app leaves the foreground.
-- Keep all speech recognition on-device with the existing WhisperKit path.
+- Keep the permanent OpenAI credential on the backend. The local WhisperKit path remains the offline fallback.
 
 ## Test plan
 
@@ -101,7 +104,7 @@ The recipient must parse as a bounded email address before the action can become
 - Controlling another app after Hermes leaves the foreground.
 - Background hotword listening.
 - Simultaneous full-duplex speech or interrupting Hermes while it is speaking; this release uses automatic alternating turns.
-- Cloud LLM planning or downloadable executable tools.
+- Downloadable executable tools or arbitrary model-generated URLs.
 
 ## Future expansion
 

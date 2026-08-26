@@ -160,6 +160,9 @@ final class DictationSessionController {
 
         do {
             try recorder.start()
+            // Load the model while the user is still talking, so its cost does
+            // not land between them stopping and seeing text.
+            Task { await transcriber.prewarm(modelPath: modelPath) }
             let startedAt = Date()
             isKeyboardHandoffSession = keyboardHandoff
             wasInterrupted = false
@@ -295,6 +298,7 @@ final class DictationSessionController {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(200))
                 guard !Task.isCancelled, let self, self.isRecording else { return }
+                BackgroundDictationState.heartbeat()
                 let reachedDurationLimit = Date().timeIntervalSince(startedAt)
                     >= BackgroundDictationState.maximumRecordingDuration
                 if BackgroundDictationState.shouldStop() || reachedDurationLimit {

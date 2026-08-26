@@ -1,0 +1,18 @@
+{
+  "bug": "action-button-unknown-error",
+  "device": "iPhone 17 (iPhone18,3)",
+  "trigger": "Run Start Dictation from Shortcuts or the physical Action Button",
+  "observed": {
+    "systemMessage": "An unknown error occurred",
+    "backgroundDictationPhase": "idle",
+    "errorMessage": null,
+    "whisperDictProcessStarted": false,
+    "liveActivityExtensionStarted": true
+  },
+  "expected": {
+    "backgroundDictationPhase": "recording",
+    "microphone": "Recording starts without opening WhisperDict",
+    "secondInvocation": "Stops the active recording",
+    "failureReporting": "A specific WhisperDict error is persisted instead of a generic system error"
+  }
+}

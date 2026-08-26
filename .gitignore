@@ -8,3 +8,4 @@ dist/
 .build/
 xcuserdata/
 *.xcuserstate
+.collaborator

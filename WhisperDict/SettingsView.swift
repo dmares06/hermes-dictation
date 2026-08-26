@@ -15,6 +15,20 @@ struct SettingsView: View {
                 Toggle("Auto-punctuate", isOn: Bindable(state).autoPunctuate)
                 Toggle("Auto-capitalize", isOn: Bindable(state).autoCapitalize)
             }
+            Section {
+                TextField(
+                    "Phone number or email",
+                    text: Bindable(state).defaultMessageRecipient
+                )
+                .textContentType(.telephoneNumber)
+                .keyboardType(.namePhonePad)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+            } header: {
+                Text("Messages")
+            } footer: {
+                Text("Pre-addresses the message sheet so dictation goes straight to one person. Leave empty to choose a recipient each time.")
+            }
             Section("Appearance") {
                 ColorPicker("Keyboard color", selection: keyboardColor, supportsOpacity: false)
                 ColorPicker("Record button color", selection: recordButtonColor, supportsOpacity: false)
@@ -27,6 +41,14 @@ struct SettingsView: View {
             Section("Privacy") {
                 Label("Audio is processed on this device.", systemImage: "lock.shield")
                 Text("WhisperDict does not send your dictated audio to a server.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Setup") {
+                Button("Run setup again") {
+                    state.welcomeDone = false
+                }
+                Text("Review microphone, speech model, keyboard, and Action Button setup.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

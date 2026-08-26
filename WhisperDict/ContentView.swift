@@ -4,6 +4,10 @@ import MessageUI
 struct MessageComposePayload: Identifiable {
     let id = UUID()
     let body: String
+    /// Pre-addresses the compose sheet so dictating into Messages does not
+    /// mean returning to the app and retyping a name. Empty is valid: the
+    /// sheet then opens with the text and an empty To field.
+    var recipients: [String] = []
 }
 
 struct ContentView: View {
@@ -56,6 +60,13 @@ struct ContentView: View {
             guard !request.isEmpty else { return }
             handlePendingShortcutToggle()
         }
+        .onChange(of: settings.modelSize) { _, model in
+            downloadService.refresh(for: model)
+        }
+        .fullScreenCover(isPresented: onboardingPresented) {
+            OnboardingView(downloadService: downloadService)
+                .environment(settings)
+        }
         .onOpenURL { url in
             guard url.scheme == "whisperdict" else { return }
             if url.host == "agent" {
@@ -71,7 +82,7 @@ struct ContentView: View {
             runShortcutToggle()
         }
         .sheet(item: $messagePayload) { payload in
-            MessageComposeView(body: payload.body)
+            MessageComposeView(body: payload.body, recipients: payload.recipients)
         }
     }
 
@@ -118,7 +129,10 @@ struct ContentView: View {
                             copied: copiedText == dictation.transcript,
                             copyAction: { copy(dictation.transcript) },
                             messageAction: {
-                                messagePayload = MessageComposePayload(body: dictation.transcript)
+                                messagePayload = MessageComposePayload(
+                                    body: dictation.transcript,
+                                    recipients: settings.messageRecipients
+                                )
                             }
                         )
                     }
@@ -160,6 +174,15 @@ struct ContentView: View {
             try? await Task.sleep(for: .seconds(2))
             if copiedText == text { copiedText = "" }
         }
+    }
+
+    private var onboardingPresented: Binding<Bool> {
+        Binding(
+            get: { !settings.welcomeDone },
+            set: { isPresented in
+                if !isPresented { settings.welcomeDone = true }
+            }
+        )
     }
 
 }
@@ -336,6 +359,7 @@ private struct TranscriptCard: View {
 
 struct MessageComposeView: UIViewControllerRepresentable {
     let body: String
+    var recipients: [String] = []
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -347,6 +371,9 @@ struct MessageComposeView: UIViewControllerRepresentable {
         }
         let controller = MFMessageComposeViewController()
         controller.body = body
+        if !recipients.isEmpty {
+            controller.recipients = recipients
+        }
         controller.messageComposeDelegate = context.coordinator
         return controller
     }
