@@ -30,6 +30,14 @@ struct SettingsView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+            Section("Setup") {
+                Button("Run setup again") {
+                    state.welcomeDone = false
+                }
+                Text("Review microphone, speech model, keyboard, and Action Button setup.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             Section("About") {
                 LabeledContent("Version", value: "1.0")
                 LabeledContent("Platform", value: "iOS 17+")

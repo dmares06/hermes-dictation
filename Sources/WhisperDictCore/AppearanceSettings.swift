@@ -10,7 +10,7 @@ public enum KeyboardRecorderAction: Equatable, Sendable {
 public enum KeyboardHandoffGuidance {
     public static func idleMessage(hasFullAccess: Bool) -> String {
         hasFullAccess
-            ? "Press your iPhone Action Button to record and insert"
+            ? "Press and hold the physical Action Button. You stay in this app."
             : "Turn on Full Access for WhisperDict in Settings to insert recordings here"
     }
 
@@ -29,6 +29,12 @@ public enum KeyboardHandoffGuidance {
         case .transcribing: "Working"
         case .idle, .ready, .failed: "Action Button"
         }
+    }
+
+    public static func micButtonMessage(hasFullAccess: Bool) -> String {
+        hasFullAccess
+            ? "Press your iPhone Action Button to open WhisperDict and record."
+            : "Allow Full Access first so Hermes can return the transcript to this keyboard."
     }
 }
 

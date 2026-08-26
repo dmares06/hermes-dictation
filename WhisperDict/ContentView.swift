@@ -56,6 +56,13 @@ struct ContentView: View {
             guard !request.isEmpty else { return }
             handlePendingShortcutToggle()
         }
+        .onChange(of: settings.modelSize) { _, model in
+            downloadService.refresh(for: model)
+        }
+        .fullScreenCover(isPresented: onboardingPresented) {
+            OnboardingView(downloadService: downloadService)
+                .environment(settings)
+        }
         .onOpenURL { url in
             guard url.scheme == "whisperdict" else { return }
             if url.host == "agent" {
@@ -160,6 +167,15 @@ struct ContentView: View {
             try? await Task.sleep(for: .seconds(2))
             if copiedText == text { copiedText = "" }
         }
+    }
+
+    private var onboardingPresented: Binding<Bool> {
+        Binding(
+            get: { !settings.welcomeDone },
+            set: { isPresented in
+                if !isPresented { settings.welcomeDone = true }
+            }
+        )
     }
 
 }

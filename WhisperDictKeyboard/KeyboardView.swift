@@ -12,44 +12,44 @@ struct KeyboardView: View {
 
     var body: some View {
         VStack(spacing: 7) {
-            HStack(spacing: 8) {
-                Button(action: onOpenRecorder) {
-                    Label(recordButtonTitle, systemImage: recordButtonIcon)
-                        .font(.footnote.weight(.semibold))
-                        .padding(.horizontal, 12)
-                        .frame(minHeight: 34)
-                        .foregroundStyle(recordButtonForeground)
-                        .background(activeRecordButtonColor, in: RoundedRectangle(cornerRadius: 9))
-                }
-                .buttonStyle(.plain)
-
-                if !state.latestTranscript.isEmpty {
-                    Button {
-                        onInsert(state.latestTranscript)
-                    } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "waveform.badge.mic")
-                        Text("Insert latest")
-                            .fontWeight(.semibold)
-                        Text(state.latestTranscript)
-                            .lineLimit(1)
-                            .foregroundStyle(.secondary)
-                        Spacer(minLength: 0)
-                    }
-                    .font(.footnote)
-                    .padding(.horizontal, 12)
-                    .frame(maxWidth: .infinity, minHeight: 34)
-                    .background(recordButtonColor.opacity(0.16), in: RoundedRectangle(cornerRadius: 9))
+            VStack(spacing: 4) {
+                HStack(spacing: 8) {
+                    Button(action: onOpenRecorder) {
+                        recordControlLabel
                     }
                     .buttonStyle(.plain)
-                    .accessibilityHint("Inserts the most recent transcript created in WhisperDict")
-                } else {
-                    Text(state.handoffStatus ?? "Press your Action Button to dictate privately")
+                    .accessibilityHint(recordButtonAccessibilityHint)
+
+                    if !state.latestTranscript.isEmpty {
+                        Button {
+                            onInsert(state.latestTranscript)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "waveform.badge.mic")
+                                Text("Insert latest")
+                                    .fontWeight(.semibold)
+                                Text(state.latestTranscript)
+                                    .lineLimit(1)
+                                    .foregroundStyle(.secondary)
+                                Spacer(minLength: 0)
+                            }
+                            .font(.footnote)
+                            .padding(.horizontal, 12)
+                            .frame(maxWidth: .infinity, minHeight: 34)
+                            .background(recordButtonColor.opacity(0.16), in: RoundedRectangle(cornerRadius: 9))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Inserts the most recent transcript created in WhisperDict")
+                    } else {
+                        Spacer(minLength: 0)
+                    }
+                }
+
+                Text(state.handoffStatus ?? defaultHandoffStatus)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
-                    Spacer(minLength: 0)
-                }
+                        .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             ForEach(Array(layout.rows.enumerated()), id: \.offset) { _, row in
@@ -96,11 +96,38 @@ struct KeyboardView: View {
         KeyboardHandoffGuidance.recorderButtonTitle(for: state.backgroundPhase)
     }
 
+    private var recordControlLabel: some View {
+        Label(recordButtonTitle, systemImage: recordButtonIcon)
+            .font(.footnote.weight(.semibold))
+            .padding(.horizontal, 12)
+            .frame(minHeight: 34)
+            .foregroundStyle(recordButtonForeground)
+            .background(activeRecordButtonColor, in: RoundedRectangle(cornerRadius: 9))
+    }
+
     private var recordButtonIcon: String {
         switch state.backgroundPhase {
         case .recording: "stop.fill"
         case .transcribing: "ellipsis"
         case .idle, .ready, .failed: "mic.fill"
+        }
+    }
+
+    private var defaultHandoffStatus: String {
+        return switch state.backgroundPhase {
+        case .recording: "Speak naturally, then tap Stop"
+        case .transcribing: "Transcribing privately on this iPhone…"
+        case .ready: KeyboardHandoffGuidance.idleMessage(hasFullAccess: true)
+        case .failed: "Press the Action Button again, or open WhisperDict for details"
+        case .idle: KeyboardHandoffGuidance.idleMessage(hasFullAccess: true)
+        }
+    }
+
+    private var recordButtonAccessibilityHint: String {
+        switch state.backgroundPhase {
+        case .recording: "Stops recording so WhisperDict can transcribe and insert your words"
+        case .transcribing: "WhisperDict is transcribing your recording"
+        case .idle, .ready, .failed: "Shows how to start Hermes dictation from any app"
         }
     }
 
@@ -135,38 +162,71 @@ private struct KeyButton: View {
     let numericMode: Bool
     let showsNextKeyboard: Bool
     let action: () -> Void
+    @State private var repeatTask: Task<Void, Never>?
 
     var body: some View {
-        Button(action: action) {
-            Group {
-                switch key {
-                case .shift:
-                    Image(systemName: shifted ? "shift.fill" : "shift")
-                case .delete:
-                    Image(systemName: "delete.left")
-                case .globe:
-                    Image(systemName: "globe")
-                case .returnKey:
-                    Image(systemName: "return")
-                case .modeChange:
-                    Text(numericMode ? "ABC" : "123")
-                        .font(.caption.weight(.medium))
-                case .space:
-                    Text("space").font(.caption)
-                case .character:
-                    Text(key.text(shifted: shifted) ?? "")
-                        .font(.title3)
-                }
+        Group {
+            if key == .delete {
+                keyCap
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { _ in startRepeatingDelete() }
+                            .onEnded { _ in stopRepeatingDelete() }
+                    )
+            } else {
+                Button(action: action) { keyCap }
+                    .buttonStyle(KeyPopupButtonStyle(popupText: popupText))
             }
+        }
+        .opacity(key == .globe && !showsNextKeyboard ? 0.45 : 1)
+        .accessibilityLabel(accessibilityLabel)
+        .onDisappear(perform: stopRepeatingDelete)
+    }
+
+    private var keyCap: some View {
+        Group {
+            switch key {
+            case .shift:
+                Image(systemName: shifted ? "shift.fill" : "shift")
+            case .delete:
+                Image(systemName: "delete.left")
+            case .globe:
+                Image(systemName: "globe")
+            case .returnKey:
+                Image(systemName: "return")
+            case .modeChange:
+                Text(numericMode ? "ABC" : "123")
+                    .font(.caption.weight(.medium))
+            case .space:
+                Text("space").font(.caption)
+            case .character:
+                Text(key.text(shifted: shifted) ?? "")
+                    .font(.title3)
+            }
+        }
             .frame(maxWidth: key == .space ? .infinity : nil)
             .frame(minWidth: minimumWidth, maxWidth: .infinity, minHeight: 42)
             .foregroundStyle(.primary)
             .background(backgroundColor, in: RoundedRectangle(cornerRadius: 6))
             .shadow(color: .black.opacity(0.16), radius: 0.5, y: 1)
+    }
+
+    private func startRepeatingDelete() {
+        guard repeatTask == nil else { return }
+        action()
+        repeatTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            while !Task.isCancelled {
+                action()
+                try? await Task.sleep(for: .milliseconds(70))
+            }
         }
-        .buttonStyle(.plain)
-        .opacity(key == .globe && !showsNextKeyboard ? 0.45 : 1)
-        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private func stopRepeatingDelete() {
+        repeatTask?.cancel()
+        repeatTask = nil
     }
 
     private var minimumWidth: CGFloat {
@@ -184,6 +244,12 @@ private struct KeyButton: View {
         }
     }
 
+    private var popupText: String? {
+        guard case .character(let value) = key,
+              value.allSatisfy(\.isLetter) else { return nil }
+        return key.text(shifted: shifted)
+    }
+
     private var accessibilityLabel: String {
         switch key {
         case .character: key.text(shifted: shifted) ?? "key"
@@ -194,5 +260,28 @@ private struct KeyButton: View {
         case .space: "Space"
         case .returnKey: "Return"
         }
+    }
+}
+
+private struct KeyPopupButtonStyle: ButtonStyle {
+    let popupText: String?
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(Rectangle())
+            .overlay(alignment: .top) {
+                if configuration.isPressed, let popupText {
+                    Text(popupText)
+                        .font(.title2.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .frame(width: 54, height: 58)
+                        .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 9))
+                        .shadow(color: .black.opacity(0.28), radius: 2, y: 1)
+                        .offset(y: -48)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+            .zIndex(configuration.isPressed ? 1 : 0)
     }
 }

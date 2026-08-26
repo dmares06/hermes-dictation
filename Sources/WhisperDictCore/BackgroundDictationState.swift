@@ -52,16 +52,37 @@ public enum BackgroundDictationState {
         public static let errorMessage = "backgroundDictationError"
         public static let transcriptRevision = "backgroundDictationTranscriptRevision"
         public static let foregroundToggleRequest = "backgroundDictationForegroundToggleRequest"
+        public static let heartbeat = "backgroundDictationHeartbeat"
+        public static let intentStage = "backgroundDictationIntentStage"
     }
 
-    public static func phase(defaults: UserDefaults? = sharedDefaults) -> BackgroundDictationPhase {
+    public static let staleRecordingInterval: TimeInterval = 10
+    public static let staleTranscribingInterval: TimeInterval = 5 * 60
+
+    public static func phase(
+        defaults: UserDefaults? = sharedDefaults,
+        now: Date = Date()
+    ) -> BackgroundDictationPhase {
         guard let rawValue = defaults?.string(forKey: Keys.phase) else { return .idle }
-        return BackgroundDictationPhase(rawValue: rawValue) ?? .idle
+        let value = BackgroundDictationPhase(rawValue: rawValue) ?? .idle
+        guard value == .recording || value == .transcribing else { return value }
+
+        let heartbeat = defaults?.double(forKey: Keys.heartbeat) ?? 0
+        let startedAt = defaults?.double(forKey: Keys.startedAt) ?? 0
+        let lastActivity = heartbeat > 0 ? heartbeat : startedAt
+        let staleInterval = value == .recording ? staleRecordingInterval : staleTranscribingInterval
+        guard lastActivity > 0,
+              now.timeIntervalSince1970 - lastActivity > staleInterval
+        else { return value }
+
+        fail("The previous dictation ended unexpectedly. Press the Action Button to start again.", defaults: defaults)
+        return .failed
     }
 
     public static func begin(defaults: UserDefaults? = sharedDefaults, now: Date = Date()) {
         defaults?.set(false, forKey: Keys.stopRequested)
         defaults?.set(now.timeIntervalSince1970, forKey: Keys.startedAt)
+        defaults?.set(now.timeIntervalSince1970, forKey: Keys.heartbeat)
         defaults?.removeObject(forKey: Keys.errorMessage)
         setPhase(.recording, defaults: defaults)
     }
@@ -84,6 +105,16 @@ public enum BackgroundDictationState {
         defaults?.bool(forKey: Keys.stopRequested) == true
     }
 
+    public static func heartbeat(defaults: UserDefaults? = sharedDefaults, now: Date = Date()) {
+        defaults?.set(now.timeIntervalSince1970, forKey: Keys.heartbeat)
+    }
+
+    public static func markIntentStage(
+        _ stage: String,
+        defaults: UserDefaults? = sharedDefaults
+    ) {
+        defaults?.set(stage, forKey: Keys.intentStage)
+    }
 
     public static func liveActivityFailureMessage(
         activitiesEnabled: Bool,
@@ -135,6 +166,7 @@ public enum BackgroundDictationState {
     ) {
         defaults?.set(transcriptRevision.timeIntervalSince1970, forKey: Keys.transcriptRevision)
         defaults?.set(false, forKey: Keys.stopRequested)
+        defaults?.removeObject(forKey: Keys.heartbeat)
         setPhase(.ready, defaults: defaults)
     }
 
@@ -144,11 +176,42 @@ public enum BackgroundDictationState {
     ) {
         defaults?.set(message, forKey: Keys.errorMessage)
         defaults?.set(false, forKey: Keys.stopRequested)
+        defaults?.removeObject(forKey: Keys.heartbeat)
         setPhase(.failed, defaults: defaults)
     }
 
     public static var sharedDefaults: UserDefaults? {
         UserDefaults(suiteName: appGroupID)
+    }
+}
+
+public struct KeyboardTranscriptInsertionGate: Sendable {
+    private var lastRevision: TimeInterval
+    private var observedSessionStartedAt: TimeInterval = 0
+
+    public init(currentRevision: TimeInterval) {
+        lastRevision = currentRevision
+    }
+
+    public mutating func shouldInsert(
+        phase: BackgroundDictationPhase,
+        sessionStartedAt: TimeInterval,
+        transcriptRevision: TimeInterval
+    ) -> Bool {
+        if phase == .recording || phase == .transcribing,
+           sessionStartedAt > 0 {
+            observedSessionStartedAt = sessionStartedAt
+        }
+
+        guard transcriptRevision > lastRevision else { return false }
+        lastRevision = transcriptRevision
+        guard phase == .ready,
+              observedSessionStartedAt > 0,
+              transcriptRevision >= observedSessionStartedAt
+        else { return false }
+
+        observedSessionStartedAt = 0
+        return true
     }
 }
 

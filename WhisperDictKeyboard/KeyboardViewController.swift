@@ -8,14 +8,14 @@ final class KeyboardViewController: UIInputViewController {
     private let transcriptStore = TranscriptStore()
     private let appearanceStore = AppearanceStore()
     private var sessionTimer: Timer?
-    private var lastTranscriptRevision = 0.0
+    private var insertionGate = KeyboardTranscriptInsertionGate(currentRevision: 0)
 
     override func viewDidLoad() {
         super.viewDidLoad()
         let keyboard = KeyboardView(
             state: keyboardState,
             onOpenRecorder: { [weak self] in self?.openRecorder() },
-            onInsert: { [weak self] text in self?.textDocumentProxy.insertText(text) },
+            onInsert: { [weak self] text in self?.insertText(text) },
             onDelete: { [weak self] in self?.textDocumentProxy.deleteBackward() },
             onNextKeyboard: { [weak self] in self?.advanceToNextInputMode() }
         )
@@ -32,8 +32,9 @@ final class KeyboardViewController: UIInputViewController {
         ])
         hosting.didMove(toParent: self)
         hostingController = hosting
-        lastTranscriptRevision = BackgroundDictationState.sharedDefaults?
+        let currentRevision = BackgroundDictationState.sharedDefaults?
             .double(forKey: BackgroundDictationState.Keys.transcriptRevision) ?? 0
+        insertionGate = KeyboardTranscriptInsertionGate(currentRevision: currentRevision)
         refreshSharedTranscript()
     }
 
@@ -72,7 +73,9 @@ final class KeyboardViewController: UIInputViewController {
             keyboardState.handoffStatus = BackgroundDictationState.sharedDefaults?
                 .string(forKey: BackgroundDictationState.Keys.errorMessage) ?? "Dictation failed. Try your Action Button again."
         case .showActionButtonGuidance:
-            keyboardState.handoffStatus = "Press your iPhone Action Button to open WhisperDict and record."
+            keyboardState.handoffStatus = KeyboardHandoffGuidance.micButtonMessage(
+                hasFullAccess: hasFullAccess
+            )
         }
         refreshBackgroundSession()
     }
@@ -84,14 +87,30 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
 
+    private func insertText(_ text: String) {
+        let edit = KeyboardTextProcessor.edit(
+            for: text,
+            contextBeforeInput: textDocumentProxy.documentContextBeforeInput
+        )
+        for _ in 0..<edit.deleteBackwardCount {
+            textDocumentProxy.deleteBackward()
+        }
+        guard !edit.insertedText.isEmpty else { return }
+        textDocumentProxy.insertText(edit.insertedText)
+    }
+
     private func refreshBackgroundSession() {
         let phase = BackgroundDictationState.phase()
         keyboardState.backgroundPhase = phase
 
         let defaults = BackgroundDictationState.sharedDefaults
+        let startedAt = defaults?.double(forKey: BackgroundDictationState.Keys.startedAt) ?? 0
         let revision = defaults?.double(forKey: BackgroundDictationState.Keys.transcriptRevision) ?? 0
-        guard revision > lastTranscriptRevision else { return }
-        lastTranscriptRevision = revision
+        guard insertionGate.shouldInsert(
+            phase: phase,
+            sessionStartedAt: startedAt,
+            transcriptRevision: revision
+        ) else { return }
         keyboardState.latestTranscript = transcriptStore.latest?.text ?? ""
         guard !keyboardState.latestTranscript.isEmpty else { return }
         textDocumentProxy.insertText(keyboardState.latestTranscript)

@@ -23,7 +23,13 @@ final class BackgroundDictationStateTests: XCTestCase {
         let revision = Date(timeIntervalSince1970: 200)
 
         BackgroundDictationState.begin(defaults: defaults, now: startedAt)
-        XCTAssertEqual(BackgroundDictationState.phase(defaults: defaults), .recording)
+        XCTAssertEqual(
+            BackgroundDictationState.phase(
+                defaults: defaults,
+                now: Date(timeIntervalSince1970: 100)
+            ),
+            .recording
+        )
         XCTAssertEqual(defaults.double(forKey: BackgroundDictationState.Keys.startedAt), 100)
         XCTAssertFalse(BackgroundDictationState.shouldStop(defaults: defaults))
 
@@ -47,6 +53,94 @@ final class BackgroundDictationStateTests: XCTestCase {
             "Microphone unavailable"
         )
         XCTAssertFalse(BackgroundDictationState.shouldStop(defaults: defaults))
+    }
+
+    func testStaleRecordingIsRecoveredInsteadOfRemainingStuck() {
+        BackgroundDictationState.begin(
+            defaults: defaults,
+            now: Date(timeIntervalSince1970: 100)
+        )
+
+        XCTAssertEqual(
+            BackgroundDictationState.phase(
+                defaults: defaults,
+                now: Date(timeIntervalSince1970: 111)
+            ),
+            .failed
+        )
+        XCTAssertEqual(
+            defaults.string(forKey: BackgroundDictationState.Keys.errorMessage),
+            "The previous dictation ended unexpectedly. Press the Action Button to start again."
+        )
+    }
+
+    func testHeartbeatKeepsAnActiveRecordingAlive() {
+        BackgroundDictationState.begin(
+            defaults: defaults,
+            now: Date(timeIntervalSince1970: 100)
+        )
+        BackgroundDictationState.heartbeat(
+            defaults: defaults,
+            now: Date(timeIntervalSince1970: 109)
+        )
+
+        XCTAssertEqual(
+            BackgroundDictationState.phase(
+                defaults: defaults,
+                now: Date(timeIntervalSince1970: 111)
+            ),
+            .recording
+        )
+    }
+
+    func testIntentStageIsPersistedForActionButtonDiagnostics() {
+        BackgroundDictationState.markIntentStage("invoked", defaults: defaults)
+
+        XCTAssertEqual(
+            defaults.string(forKey: BackgroundDictationState.Keys.intentStage),
+            "invoked"
+        )
+    }
+
+    func testStaleTranscriptionIsRecovered() {
+        BackgroundDictationState.begin(
+            defaults: defaults,
+            now: Date(timeIntervalSince1970: 100)
+        )
+        BackgroundDictationState.setPhase(.transcribing, defaults: defaults)
+
+        XCTAssertEqual(
+            BackgroundDictationState.phase(
+                defaults: defaults,
+                now: Date(timeIntervalSince1970: 401)
+            ),
+            .failed
+        )
+    }
+
+    func testOldTranscriptNeverInsertsWithoutAnObservedRecording() {
+        var gate = KeyboardTranscriptInsertionGate(currentRevision: 100)
+
+        XCTAssertFalse(
+            gate.shouldInsert(phase: .ready, sessionStartedAt: 0, transcriptRevision: 200)
+        )
+    }
+
+    func testObservedRecordingInsertsItsResultExactlyOnce() {
+        var gate = KeyboardTranscriptInsertionGate(currentRevision: 100)
+
+        XCTAssertFalse(
+            gate.shouldInsert(phase: .recording, sessionStartedAt: 150, transcriptRevision: 100)
+        )
+        XCTAssertFalse(
+            gate.shouldInsert(phase: .transcribing, sessionStartedAt: 150, transcriptRevision: 100)
+        )
+        XCTAssertTrue(
+            gate.shouldInsert(phase: .ready, sessionStartedAt: 150, transcriptRevision: 200)
+        )
+        XCTAssertFalse(
+            gate.shouldInsert(phase: .ready, sessionStartedAt: 150, transcriptRevision: 200)
+        )
     }
 
     func testLiveActivityFailureMessageDoesNotBlameSettingsWhenAlreadyEnabled() {
@@ -181,7 +275,37 @@ final class KeyboardHandoffGuidanceTests: XCTestCase {
     func testReadyKeyboardExplainsTheActionButtonFlow() {
         XCTAssertEqual(
             KeyboardHandoffGuidance.idleMessage(hasFullAccess: true),
-            "Press your iPhone Action Button to record and insert"
+            "Press and hold the physical Action Button. You stay in this app."
+        )
+    }
+
+    func testIdleKeyboardPointsAtTheActionButton() {
+        XCTAssertEqual(
+            KeyboardHandoffGuidance.recorderButtonTitle(for: .idle),
+            "Action Button"
+        )
+        XCTAssertEqual(
+            KeyboardHandoffGuidance.recorderButtonTitle(for: .ready),
+            "Action Button"
+        )
+        XCTAssertEqual(
+            KeyboardHandoffGuidance.recorderButtonTitle(for: .recording),
+            "Stop"
+        )
+        XCTAssertEqual(
+            KeyboardHandoffGuidance.recorderButtonTitle(for: .transcribing),
+            "Working"
+        )
+    }
+
+    func testKeyboardExplainsTheActionButtonHandoff() {
+        XCTAssertEqual(
+            KeyboardHandoffGuidance.micButtonMessage(hasFullAccess: true),
+            "Press your iPhone Action Button to open WhisperDict and record."
+        )
+        XCTAssertEqual(
+            KeyboardHandoffGuidance.micButtonMessage(hasFullAccess: false),
+            "Allow Full Access first so Hermes can return the transcript to this keyboard."
         )
     }
 }

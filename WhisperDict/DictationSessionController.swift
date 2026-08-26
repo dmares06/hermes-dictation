@@ -295,6 +295,7 @@ final class DictationSessionController {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(200))
                 guard !Task.isCancelled, let self, self.isRecording else { return }
+                BackgroundDictationState.heartbeat()
                 let reachedDurationLimit = Date().timeIntervalSince(startedAt)
                     >= BackgroundDictationState.maximumRecordingDuration
                 if BackgroundDictationState.shouldStop() || reachedDurationLimit {
