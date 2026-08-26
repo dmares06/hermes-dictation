@@ -81,6 +81,27 @@ else
 fi
 
 echo "📱 Target: ${DEVICE_NAME} (${DEVICE_ID})"
+
+# The app authenticates to the Hermes backend with WHISPERDICT_CLIENT_TOKEN,
+# expanded into Info.plist at build time. Nothing in the project supplies it,
+# so resolve it here: an exported variable wins, otherwise the production env
+# pulled from Vercel (`vercel env pull --environment=production`).
+if [ -z "${WHISPERDICT_CLIENT_TOKEN:-}" ]; then
+    for env_file in realtime-backend/.vercel/.env.production.local realtime-backend/.env.local; do
+        if [ -f "$env_file" ]; then
+            WHISPERDICT_CLIENT_TOKEN="$(grep -E '^WHISPERDICT_CLIENT_TOKEN=' "$env_file" | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
+            [ -n "$WHISPERDICT_CLIENT_TOKEN" ] && break
+        fi
+    done
+fi
+if [ -z "${WHISPERDICT_CLIENT_TOKEN:-}" ]; then
+    echo "⚠️  No WHISPERDICT_CLIENT_TOKEN found; the Realtime agent and Gmail will not work in this build." >&2
+    echo "   Run: (cd realtime-backend && vercel env pull --environment=production .vercel/.env.production.local)" >&2
+    TOKEN_SETTING=()
+else
+    TOKEN_SETTING=("WHISPERDICT_CLIENT_TOKEN=${WHISPERDICT_CLIENT_TOKEN}")
+fi
+
 echo "🔨 Building ${SCHEME} (${CONFIGURATION})..."
 
 # -allowProvisioningUpdates lets Xcode refresh the free personal-team profile,
@@ -91,6 +112,7 @@ xcodebuild \
     -configuration "$CONFIGURATION" \
     -destination "platform=iOS,id=${DEVICE_ID}" \
     -allowProvisioningUpdates \
+    "${TOKEN_SETTING[@]}" \
     build
 
 if [ "$DO_INSTALL" -eq 0 ]; then
