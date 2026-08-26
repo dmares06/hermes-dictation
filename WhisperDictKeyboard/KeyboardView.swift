@@ -2,6 +2,7 @@ import SwiftUI
 
 struct KeyboardView: View {
     let state: KeyboardState
+    let onToggleMic: () -> Void
     let onOpenRecorder: () -> Void
     let onInsert: (String) -> Void
     let onDelete: () -> Void
@@ -13,17 +14,35 @@ struct KeyboardView: View {
     var body: some View {
         VStack(spacing: 7) {
             HStack(spacing: 8) {
-                Button(action: onOpenRecorder) {
-                    Label(recordButtonTitle, systemImage: recordButtonIcon)
+                Button(action: onToggleMic) {
+                    Label(micButtonTitle, systemImage: micButtonIcon)
                         .font(.footnote.weight(.semibold))
                         .padding(.horizontal, 12)
                         .frame(minHeight: 34)
                         .foregroundStyle(recordButtonForeground)
-                        .background(activeRecordButtonColor, in: RoundedRectangle(cornerRadius: 9))
+                        .background(activeMicButtonColor, in: RoundedRectangle(cornerRadius: 9))
                 }
                 .buttonStyle(.plain)
+                .accessibilityHint("Dictates with the microphone directly into this text field")
 
-                if !state.latestTranscript.isEmpty {
+                Button(action: onOpenRecorder) {
+                    Label(recordButtonTitle, systemImage: recordButtonIcon)
+                        .font(.footnote.weight(.semibold))
+                        .padding(.horizontal, 10)
+                        .frame(minHeight: 34)
+                        .foregroundStyle(.primary)
+                        .background(recordButtonColor.opacity(0.16), in: RoundedRectangle(cornerRadius: 9))
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Records in the WhisperDict app with Whisper via your Action Button")
+
+                if state.dictationPhase != .idle {
+                    Text(state.handoffStatus ?? "Listening…")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    Spacer(minLength: 0)
+                } else if !state.latestTranscript.isEmpty {
                     Button {
                         onInsert(state.latestTranscript)
                     } label: {
@@ -44,7 +63,7 @@ struct KeyboardView: View {
                     .buttonStyle(.plain)
                     .accessibilityHint("Inserts the most recent transcript created in WhisperDict")
                 } else {
-                    Text(state.handoffStatus ?? "Press your Action Button to dictate privately")
+                    Text(state.handoffStatus ?? "Tap the mic to dictate right here")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
@@ -88,8 +107,28 @@ struct KeyboardView: View {
         state.recordButtonColor.prefersDarkForeground ? .black : .white
     }
 
-    private var activeRecordButtonColor: Color {
-        state.backgroundPhase == .recording ? .red : recordButtonColor
+    private var activeMicButtonColor: Color {
+        switch state.dictationPhase {
+        case .listening, .starting, .finishing: .red
+        case .idle: recordButtonColor
+        }
+    }
+
+    private var micButtonTitle: String {
+        switch state.dictationPhase {
+        case .idle: "Dictate"
+        case .starting: "Starting"
+        case .listening: "Stop"
+        case .finishing: "Finishing"
+        }
+    }
+
+    private var micButtonIcon: String {
+        switch state.dictationPhase {
+        case .idle: "mic.fill"
+        case .starting, .finishing: "ellipsis"
+        case .listening: "stop.fill"
+        }
     }
 
     private var recordButtonTitle: String {
@@ -100,7 +139,7 @@ struct KeyboardView: View {
         switch state.backgroundPhase {
         case .recording: "stop.fill"
         case .transcribing: "ellipsis"
-        case .idle, .ready, .failed: "mic.fill"
+        case .idle, .ready, .failed: "waveform"
         }
     }
 

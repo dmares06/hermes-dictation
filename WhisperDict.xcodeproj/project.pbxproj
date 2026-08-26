@@ -17,6 +17,9 @@
 		A10000000000000000000030 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000012 /* SettingsView.swift */; };
 		A10000000000000000000031 /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000015 /* KeyboardViewController.swift */; };
 		A10000000000000000000032 /* KeyboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000016 /* KeyboardView.swift */; };
+		C10000000000000000000001 /* KeyboardSpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000010 /* KeyboardSpeechRecognizer.swift */; };
+		C10000000000000000000002 /* Keyboard KeyboardDictationSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000011 /* KeyboardDictationSession.swift */; };
+		C10000000000000000000003 /* Keyboard TranscriptCleaner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000053 /* TranscriptCleaner.swift */; };
 		A10000000000000000000044 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000045 /* Assets.xcassets */; };
 		A10000000000000000000056 /* DictationSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000050 /* DictationSessionController.swift */; };
 		A10000000000000000000057 /* DictationAudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000051 /* DictationAudioRecorder.swift */; };
@@ -86,6 +89,8 @@
 		A10000000000000000000014 /* WhisperDict.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WhisperDict.entitlements; sourceTree = "<group>"; };
 		A10000000000000000000015 /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
 		A10000000000000000000016 /* KeyboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardView.swift; sourceTree = "<group>"; };
+		C10000000000000000000010 /* KeyboardSpeechRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardSpeechRecognizer.swift; sourceTree = "<group>"; };
+		C10000000000000000000011 /* KeyboardDictationSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardDictationSession.swift; sourceTree = "<group>"; };
 		A10000000000000000000018 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A10000000000000000000019 /* WhisperDictKeyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WhisperDictKeyboard.entitlements; sourceTree = "<group>"; };
 		A10000000000000000000045 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -162,6 +167,7 @@
 			children = (
 				A10000000000000000000015 /* KeyboardViewController.swift */,
 				A10000000000000000000016 /* KeyboardView.swift */,
+				C10000000000000000000010 /* KeyboardSpeechRecognizer.swift */,
 				A10000000000000000000018 /* Info.plist */,
 				A10000000000000000000019 /* WhisperDictKeyboard.entitlements */,
 			);
@@ -186,6 +192,7 @@
 				A10000000000000000000053 /* TranscriptCleaner.swift */,
 				A10000000000000000000054 /* TranscriptStore.swift */,
 				A10000000000000000000055 /* KeyboardLayout.swift */,
+				C10000000000000000000011 /* KeyboardDictationSession.swift */,
 				A1000000000000000000006B /* VoiceAgentSession.swift */,
 				A1000000000000000000006F /* VoiceTurnDetector.swift */,
 				B20000000000000000000011 /* BackgroundDictationState.swift */,
@@ -380,6 +387,9 @@
 			files = (
 				A10000000000000000000031 /* KeyboardViewController.swift in Sources */,
 				A10000000000000000000032 /* KeyboardView.swift in Sources */,
+				C10000000000000000000001 /* KeyboardSpeechRecognizer.swift in Sources */,
+				C10000000000000000000002 /* Keyboard KeyboardDictationSession.swift in Sources */,
+				C10000000000000000000003 /* Keyboard TranscriptCleaner.swift in Sources */,
 				A10000000000000000000061 /* Keyboard TranscriptStore.swift in Sources */,
 				A10000000000000000000062 /* KeyboardLayout.swift in Sources */,
 				A10000000000000000000067 /* Keyboard AppearanceSettings.swift in Sources */,

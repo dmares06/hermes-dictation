@@ -160,9 +160,18 @@ The app needs two permissions on first run:
 The iOS project is in `WhisperDict.xcodeproj/`. It contains:
 
 - `WhisperDict` — records from the iPhone microphone, transcribes locally with WhisperKit, removes configurable filler words, and keeps recent transcripts
-- `WhisperDictKeyboard` — a lightweight QWERTY/numeric keyboard that can insert the latest transcript from the app
+- `WhisperDictKeyboard` — a QWERTY/numeric keyboard with a built-in **Dictate** mic (Wispr Flow-style): with Allow Full Access it records right in the keyboard, streams live text into the current field with Apple's on-device speech recognizer, then cleans fillers/punctuation on stop; it can also insert the latest Whisper transcript from the app
 - `Hermes Agent` — a one-tap conversational tab that detects the end of each spoken turn, answers aloud, listens again, and waits for explicit approval before external handoffs
 - WhisperKit 1.x — on-device Core ML transcription
+
+### Keyboard dictation (hands-free, any app)
+
+1. Settings → General → Keyboard → Keyboards → **Add New Keyboard** → WhisperDict.
+2. Tap the WhisperDict keyboard in that list and turn on **Allow Full Access** (iOS only lets a keyboard use the microphone with Full Access on).
+3. Open WhisperDict → Setup guide → **Grant microphone & speech access** so both permissions are approved before the keyboard needs them.
+4. In any app, switch to the WhisperDict keyboard, tap **Dictate**, speak, and tap **Stop**. Words appear live in the field; on stop the text is cleaned (fillers removed, capitalized, punctuated) in place.
+
+Keyboard dictation uses Apple's on-device speech recognizer (`SFSpeechRecognizer` with on-device recognition) because keyboard extensions have a small memory budget that cannot hold a Whisper model. The Action Button flow below still transcribes with WhisperKit when you want maximum accuracy.
 
 ### iPhone workflow
 
@@ -187,7 +196,7 @@ Email uses the iPhone's default mail app, so set Gmail as the default mail app i
 
 The typed action model, approval rules, security boundaries, test plan, and future expansion path are documented in [`docs/VOICE_AGENT_PLAN.md`](docs/VOICE_AGENT_PLAN.md).
 
-> iOS restriction: Apple does not allow custom keyboard extensions to access the microphone, and current iOS versions can reject audio-session activation from a background Shortcut. The keyboard therefore shows Action Button guidance, while the physical Action Button, Siri, or Shortcuts opens WhisperDict and starts recording in the foreground. Third-party keyboards are unavailable in secure fields, phone-pad fields, and apps that disable custom keyboards.
+> iOS restrictions: the keyboard microphone works only with **Allow Full Access** enabled, and keyboard extensions cannot fit a Whisper model in memory, so in-keyboard dictation uses Apple's on-device recognizer while the Action Button flow uses WhisperKit. Current iOS versions can reject audio-session activation from a background Shortcut, so the Action Button opens WhisperDict and records in the foreground. Third-party keyboards are unavailable in secure fields, phone-pad fields, and apps that disable custom keyboards.
 
 Build source without signing profiles:
 
