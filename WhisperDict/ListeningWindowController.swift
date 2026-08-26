@@ -16,6 +16,11 @@ final class ListeningWindowController {
     @ObservationIgnored var onStartRequested: (@MainActor () async -> Void)?
     /// Lets the owner hold the window open while a dictation is in flight.
     @ObservationIgnored var isBusy: (@MainActor () -> Bool)?
+    /// The audio graph was rebuilt; an in-flight recording lost its tap.
+    @ObservationIgnored var onCaptureLost: (@MainActor () async -> Void)?
+
+    /// The running capture engine for a dictation to tap into.
+    var audioEngine: AVAudioEngine? { keepalive.engine }
 
     private let keepalive = ResidentAudioKeepalive()
     private let activityHost: DictationActivityHost
@@ -32,6 +37,9 @@ final class ListeningWindowController {
 
     init(activityHost: DictationActivityHost) {
         self.activityHost = activityHost
+        keepalive.onConfigurationChange = { [weak self] in
+            Task { @MainActor [weak self] in await self?.onCaptureLost?() }
+        }
     }
 
     /// Starts or refreshes the window. Safe to call on every foreground.
@@ -150,7 +158,7 @@ final class ListeningWindowController {
                 return
             }
             do {
-                try keepalive.start()
+                try keepalive.restart()
                 ListeningWindowState.markAlive()
             } catch {
                 deactivate()

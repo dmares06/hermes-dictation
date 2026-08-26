@@ -24,7 +24,7 @@ struct SettingsView: View {
             } header: {
                 Text("Background listening")
             } footer: {
-                Text("After you use WhisperDict, it stays ready in the background for this long. During that time the keyboard's Talk button, the Action Button, and the Live Activity start a recording without leaving the app you are in. Uses some battery while active.")
+                Text("After you use WhisperDict, it keeps the microphone open in the background for this long so the keyboard's Talk button, the Action Button, and the Live Activity can start a recording without leaving the app you are in. The orange microphone indicator stays on while it is listening; nothing is saved between dictations. Uses some battery while active.")
             }
             Section {
                 Picker("Email", selection: Bindable(state).emailDelivery) {

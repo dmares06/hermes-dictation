@@ -32,6 +32,11 @@ final class RealtimeAgentClient: NSObject {
     private var dataChannel: RTCDataChannel?
     private var assistantTranscript = ""
     private var isStopping = false
+    // Fulfilled when ICE gathering reaches .complete, so the offer we send
+    // carries its candidates. OpenAI does not accept trickle ICE and rejects
+    // a candidate-less offer as an unparseable SDP.
+    private var iceGatheringContinuation: CheckedContinuation<Void, Never>?
+    private var iceGatheringComplete = false
 
     func start() async throws {
         guard peerConnection == nil else { return }
@@ -84,8 +89,14 @@ final class RealtimeAgentClient: NSObject {
             stage = .localOffer
             let offer = try await createOffer(on: peerConnection)
             try await setLocalDescription(offer, on: peerConnection)
+            await waitForIceGathering(on: peerConnection)
+            // Use the gathered local description, not the pre-ICE offer.
+            let gatheredSDP = peerConnection.localDescription?.sdp ?? offer.sdp
+            guard gatheredSDP.hasPrefix("v=0"), gatheredSDP.count > 100 else {
+                throw RealtimeAgentError.offerCreationFailed
+            }
             stage = .backend
-            let answerSDP = try await requestAnswer(for: offer.sdp, clientToken: clientToken)
+            let answerSDP = try await requestAnswer(for: gatheredSDP, clientToken: clientToken)
             stage = .remoteAnswer
             try await setRemoteDescription(RTCSessionDescription(type: .answer, sdp: answerSDP), on: peerConnection)
             connectionEstablished = true
@@ -115,6 +126,9 @@ final class RealtimeAgentClient: NSObject {
         peerConnection?.close()
         peerConnection = nil
         assistantTranscript = ""
+        iceGatheringContinuation?.resume()
+        iceGatheringContinuation = nil
+        iceGatheringComplete = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         isStopping = false
         onStateChange?(.disconnected)
@@ -141,6 +155,24 @@ final class RealtimeAgentClient: NSObject {
                     continuation.resume(returning: description)
                 } else {
                     continuation.resume(throwing: error ?? RealtimeAgentError.offerCreationFailed)
+                }
+            }
+        }
+    }
+
+    /// Waits up to a few seconds for ICE gathering to finish. Non-trickle is
+    /// required by OpenAI; a timeout still sends whatever was gathered rather
+    /// than hanging, since host candidates alone usually suffice.
+    private func waitForIceGathering(on peerConnection: RTCPeerConnection) async {
+        if peerConnection.iceGatheringState == .complete || iceGatheringComplete { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            iceGatheringContinuation = continuation
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(3))
+                await MainActor.run {
+                    guard let self, let pending = self.iceGatheringContinuation else { return }
+                    self.iceGatheringContinuation = nil
+                    pending.resume()
                 }
             }
         }
@@ -298,7 +330,15 @@ extension RealtimeAgentClient: RTCPeerConnectionDelegate {
             }
         }
     }
-    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {}
+    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
+        guard newState == .complete else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.iceGatheringComplete = true
+            self.iceGatheringContinuation?.resume()
+            self.iceGatheringContinuation = nil
+        }
+    }
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {}
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {

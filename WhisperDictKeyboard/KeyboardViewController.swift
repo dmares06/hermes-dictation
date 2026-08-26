@@ -109,7 +109,19 @@ final class KeyboardViewController: UIInputViewController {
 
     private func refreshBackgroundSession() {
         let phase = BackgroundDictationState.phase()
+        let previousPhase = keyboardState.backgroundPhase
         keyboardState.backgroundPhase = phase
+        if phase != previousPhase {
+            // "Starting…" must never outlive the outcome it was waiting for.
+            switch phase {
+            case .recording: keyboardState.handoffStatus = "Listening… tap Stop when you're done"
+            case .transcribing: keyboardState.handoffStatus = "Transcribing on this iPhone…"
+            case .failed:
+                keyboardState.handoffStatus = BackgroundDictationState.sharedDefaults?
+                    .string(forKey: BackgroundDictationState.Keys.errorMessage) ?? "Dictation failed."
+            case .idle, .ready: break
+            }
+        }
         let listening = ListeningWindowState.isAlive()
         if listening != keyboardState.isListening {
             keyboardState.isListening = listening

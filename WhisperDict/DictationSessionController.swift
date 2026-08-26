@@ -30,6 +30,8 @@ final class DictationSessionController {
 
     /// Set while a listening window holds the audio session open.
     var usesSharedAudioSession = false
+    /// The window's running capture engine, tapped instead of started.
+    @ObservationIgnored var sharedAudioEngine: (() -> AVAudioEngine?)?
     // Live access stays on the main actor; deinit may run from a nonisolated context.
     @ObservationIgnored
     nonisolated(unsafe) private var elapsedTask: Task<Void, Never>?
@@ -162,6 +164,7 @@ final class DictationSessionController {
 
         do {
             recorder.managesAudioSession = !usesSharedAudioSession
+            recorder.sharedEngine = sharedAudioEngine
             try recorder.start()
             // Load the model while the user is still talking, so its cost does
             // not land between them stopping and seeing text.

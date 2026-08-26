@@ -4,9 +4,11 @@ import Foundation
 final class DictationAudioRecorder {
     enum RecorderError: LocalizedError {
         case noInput
+        case listeningWindowInactive
         var errorDescription: String? {
             switch self {
             case .noInput: "No microphone input is available."
+            case .listeningWindowInactive: "Background listening stopped. Open WhisperDict once to start it again."
             }
         }
     }
@@ -25,6 +27,12 @@ final class DictationAudioRecorder {
     /// False while a listening window owns the audio session: reconfiguring
     /// the category here would stop the keepalive and drop residency.
     var managesAudioSession = true
+
+    /// A running engine whose input is already capturing. When present, the
+    /// recorder only installs a tap on it — the one thing iOS allows from
+    /// the background — instead of starting an engine of its own.
+    var sharedEngine: (() -> AVAudioEngine?)?
+    private var usesSharedEngine = false
 
     init() {
         let center = NotificationCenter.default
@@ -60,12 +68,16 @@ final class DictationAudioRecorder {
 
     func start() throws {
         guard !isRecording else { return }
-        if managesAudioSession {
+        let shared = managesAudioSession ? nil : sharedEngine?()
+        if let shared {
+            guard shared.isRunning else { throw RecorderError.listeningWindowInactive }
+        } else if managesAudioSession {
             try session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP])
             try session.setActive(true)
         }
 
-        let engine = AVAudioEngine()
+        let engine = shared ?? AVAudioEngine()
+        usesSharedEngine = shared != nil
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { throw RecorderError.noInput }
@@ -87,8 +99,10 @@ final class DictationAudioRecorder {
         do {
             self.audioFile = file
             recordingURL = url
-            engine.prepare()
-            try engine.start()
+            if !usesSharedEngine {
+                engine.prepare()
+                try engine.start()
+            }
             self.engine = engine
             isRecording = true
         } catch {
@@ -106,8 +120,10 @@ final class DictationAudioRecorder {
     func stop() -> URL? {
         guard isRecording else { return nil }
         engine?.inputNode.removeTap(onBus: 0)
-        engine?.stop()
+        // A shared engine belongs to the listening window and keeps running.
+        if !usesSharedEngine { engine?.stop() }
         engine = nil
+        usesSharedEngine = false
         audioFile = nil
         isRecording = false
         onLevel?(0)

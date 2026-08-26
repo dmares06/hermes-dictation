@@ -50,7 +50,16 @@ export default async function handler(request, response) {
     const body = await upstream.text();
     if (!upstream.ok) {
       console.error("OpenAI Realtime session failed", upstream.status, body.slice(0, 500));
-      return response.status(502).json({ error: "realtime_session_failed" });
+      // Pass the upstream reason through so the app can tell the user what to
+      // do (e.g. a rejected offer) instead of a bare 502. No secrets are in
+      // OpenAI's error envelope.
+      let detail;
+      try {
+        detail = JSON.parse(body)?.error?.code || JSON.parse(body)?.error?.message;
+      } catch {
+        detail = undefined;
+      }
+      return response.status(502).json({ error: "realtime_session_failed", detail, upstreamStatus: upstream.status });
     }
 
     response.setHeader("Content-Type", "application/sdp");

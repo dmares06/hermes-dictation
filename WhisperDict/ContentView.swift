@@ -87,6 +87,10 @@ struct ContentView: View {
             }
         }
         .onChange(of: settings.listeningWindow) { _, _ in refreshListeningWindow() }
+        .onChange(of: agent.conversationActive) { _, active in
+            // The agent configures its own audio session; the two cannot share.
+            if active { listening.deactivate() } else { refreshListeningWindow() }
+        }
         .onChange(of: downloadService.isPrepared) { _, _ in refreshListeningWindow() }
         .onChange(of: listening.isListening) { _, isListening in
             dictation.usesSharedAudioSession = isListening
@@ -132,6 +136,8 @@ struct ContentView: View {
 
     private func wireListeningWindow() {
         listening.isBusy = { dictation.isRecording || dictation.isBusy }
+        dictation.sharedAudioEngine = { listening.audioEngine }
+        listening.onCaptureLost = { await dictation.stopIfNeeded(settings: settings) }
         listening.onStartRequested = {
             guard downloadService.isPrepared else {
                 BackgroundDictationState.fail("Prepare the speech model in WhisperDict before recording.")
@@ -145,7 +151,8 @@ struct ContentView: View {
     /// granted and a model on disk. Anything less falls back to launching.
     private func refreshListeningWindow() {
         guard downloadService.isPrepared,
-              AVAudioApplication.shared.recordPermission == .granted
+              AVAudioApplication.shared.recordPermission == .granted,
+              !agent.conversationActive
         else {
             listening.deactivate()
             return
@@ -463,26 +470,42 @@ struct MessageComposeView: UIViewControllerRepresentable {
     }
 }
 
-/// Turns a dictated sentence into a reminder, showing how it was understood
-/// before anything is added.
+/// Turns a dictated sentence into a reminder. The parse is only a starting
+/// point: every field can be changed before anything is added.
 private struct TranscriptReminderSheet: View {
     let text: String
     let onAdd: (ReminderDraft) -> Void
     @Environment(\.dismiss) private var dismiss
 
-    private var draft: ReminderDraft? { ReminderParser.parse(text) }
+    @State private var title: String
+    @State private var hasDate: Bool
+    @State private var date: Date
+
+    init(text: String, onAdd: @escaping (ReminderDraft) -> Void) {
+        self.text = text
+        self.onAdd = onAdd
+        let parsed = ReminderParser.parse(text)
+        _title = State(initialValue: parsed?.title ?? text.trimmingCharacters(in: .whitespacesAndNewlines))
+        _hasDate = State(initialValue: parsed?.dueDate != nil)
+        _date = State(initialValue: parsed?.dueDate ?? Date().addingTimeInterval(3600))
+    }
+
+    private var trimmedTitle: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("From your dictation") { Text(text) }
-                Section("Reminder") {
-                    if let draft {
-                        LabeledContent("Title", value: draft.title)
-                        LabeledContent("When", value: draft.dueDate?.formatted(date: .abbreviated, time: .shortened) ?? "No time")
-                    } else {
-                        Text("Couldn't find something to remind you about in that sentence.")
-                            .foregroundStyle(.secondary)
+                Section {
+                    TextField("What to remind you about", text: $title, axis: .vertical)
+                } header: {
+                    Text("Reminder")
+                } footer: {
+                    Text("Taken from: \u{201C}\(text)\u{201D}")
+                }
+                Section {
+                    Toggle("Set a time", isOn: $hasDate)
+                    if hasDate {
+                        DatePicker("When", selection: $date)
                     }
                 }
             }
@@ -492,10 +515,10 @@ private struct TranscriptReminderSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
-                        if let draft { onAdd(draft) }
+                        onAdd(ReminderDraft(title: trimmedTitle, dueDate: hasDate ? date : nil))
                         dismiss()
                     }
-                    .disabled(draft == nil)
+                    .disabled(trimmedTitle.isEmpty || trimmedTitle.count > ReminderDraft.maximumTitleLength)
                 }
             }
         }
