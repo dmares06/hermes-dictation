@@ -54,6 +54,11 @@ final class VoiceAgentController {
     var messagePayload: MessageComposePayload?
     /// Where in-app notes and reminders go; injected by the root view.
     @ObservationIgnored var notes: NotesController?
+    /// Mirrors Settings; applied to every email the agent prepares.
+    var emailDelivery: EmailDelivery = .mailApp {
+        didSet { session.emailDelivery = emailDelivery }
+    }
+    @ObservationIgnored private let backend = HermesBackendClient()
 
     private let recorder: DictationAudioRecorder
     private let transcriber: DictationTranscriber
@@ -95,7 +100,11 @@ final class VoiceAgentController {
             self?.appendRealtimeMessage(role: .hermes, text: transcript)
         }
         realtimeClient.onPreparedAction = { [weak self] prepared in
-            self?.handleRealtimeAction(prepared)
+            guard let self else { return }
+            self.handleRealtimeAction(RealtimePreparedAction(
+                callID: prepared.callID,
+                action: prepared.action.retargetedEmail(to: self.emailDelivery)
+            ))
         }
         refreshHistory()
     }
@@ -452,6 +461,13 @@ final class VoiceAgentController {
                 return
             }
             await open(url, failureMessage: "I couldn't open your default mail app. Check that a mail app is configured.")
+        case .sendEmail(let draft):
+            do {
+                _ = try await backend.sendEmail(draft, mode: .send)
+                await announce("Sent to \(draft.recipient).")
+            } catch {
+                await reportHandoffFailure(error.localizedDescription)
+            }
         case .shareNote(let text):
             sharePayload = VoiceAgentSharePayload(text: text)
         case .saveNote(let text):

@@ -33,6 +33,9 @@ final class SharedState {
     var listeningWindow: ListeningWindowDuration {
         didSet { defaults.set(listeningWindow.rawValue, forKey: Keys.listeningWindow) }
     }
+    var emailDelivery: EmailDelivery {
+        didSet { defaults.set(emailDelivery.rawValue, forKey: Keys.emailDelivery) }
+    }
     var keyboardColor: AppearanceColor {
         didSet { appearanceStore.keyboardColor = keyboardColor }
     }
@@ -62,6 +65,9 @@ final class SharedState {
         self.listeningWindow = ListeningWindowDuration(
             rawValue: self.defaults.string(forKey: Keys.listeningWindow) ?? ""
         ) ?? .fiveMinutes
+        self.emailDelivery = EmailDelivery(
+            rawValue: self.defaults.string(forKey: Keys.emailDelivery) ?? ""
+        ) ?? .mailApp
         self.keyboardColor = self.appearanceStore.keyboardColor
         self.recordButtonColor = self.appearanceStore.recordButtonColor
     }
@@ -80,6 +86,7 @@ final class SharedState {
         static let welcomeDone = "welcomeDone"
         static let defaultMessageRecipient = "defaultMessageRecipient"
         static let listeningWindow = "listeningWindow"
+        static let emailDelivery = "emailDelivery"
         static let modelFolderPath = "modelFolderPath"
     }
 }

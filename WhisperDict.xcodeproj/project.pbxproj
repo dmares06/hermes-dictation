@@ -41,6 +41,7 @@
 		B20000000000000000000008 /* WhisperDictLiveActivityBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000014 /* WhisperDictLiveActivityBundle.swift */; };
 		B40000000000000000000001 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40000000000000000000011 /* OnboardingView.swift */; };
 		B50000000000000000000001 /* KeyboardTextProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B50000000000000000000011 /* KeyboardTextProcessor.swift */; };
+		D60000000000000000000001 /* HermesBackendClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000011 /* HermesBackendClient.swift */; };
 		D50000000000000000000001 /* NotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000011 /* NotesView.swift */; };
 		D40000000000000000000001 /* NotesController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000000000000000000011 /* NotesController.swift */; };
 		D30000000000000000000001 /* ReminderService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000011 /* ReminderService.swift */; };
@@ -128,6 +129,7 @@
 		B20000000000000000000015 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B20000000000000000000016 /* WhisperDictLiveActivity.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WhisperDictLiveActivity.entitlements; sourceTree = "<group>"; };
 		B40000000000000000000011 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		D60000000000000000000011 /* HermesBackendClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesBackendClient.swift; sourceTree = "<group>"; };
 		D50000000000000000000011 /* NotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesView.swift; sourceTree = "<group>"; };
 		D40000000000000000000011 /* NotesController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesController.swift; sourceTree = "<group>"; };
 		D30000000000000000000011 /* ReminderService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderService.swift; sourceTree = "<group>"; };
@@ -188,6 +190,7 @@
 				B60000000000000000000011 /* RealtimeAgentClient.swift */,
 				B20000000000000000000013 /* BackgroundDictationIntent.swift */,
 				B40000000000000000000011 /* OnboardingView.swift */,
+				D60000000000000000000011 /* HermesBackendClient.swift */,
 				D50000000000000000000011 /* NotesView.swift */,
 				D40000000000000000000011 /* NotesController.swift */,
 				D30000000000000000000011 /* ReminderService.swift */,
@@ -427,6 +430,7 @@
 				B20000000000000000000005 /* WhisperDictActivityAttributes.swift in Sources */,
 				B20000000000000000000007 /* BackgroundDictationIntent.swift in Sources */,
 				B40000000000000000000001 /* OnboardingView.swift in Sources */,
+				D60000000000000000000001 /* HermesBackendClient.swift in Sources */,
 				D50000000000000000000001 /* NotesView.swift in Sources */,
 				D40000000000000000000001 /* NotesController.swift in Sources */,
 				D30000000000000000000001 /* ReminderService.swift in Sources */,

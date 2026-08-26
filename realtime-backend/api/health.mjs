@@ -1,3 +1,5 @@
+import { gmailConfigured } from "../lib/gmail.mjs";
+
 export default function handler(request, response) {
   if (request.method !== "GET") {
     response.setHeader("Allow", "GET");
@@ -8,5 +10,6 @@ export default function handler(request, response) {
     status: "ok",
     service: "whisperdict-realtime",
     configured: Boolean(process.env.OPENAI_API_KEY && process.env.WHISPERDICT_CLIENT_TOKEN),
+    gmail: gmailConfigured(),
   });
 }

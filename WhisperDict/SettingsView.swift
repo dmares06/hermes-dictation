@@ -27,6 +27,17 @@ struct SettingsView: View {
                 Text("After you use WhisperDict, it stays ready in the background for this long. During that time the keyboard's Talk button, the Action Button, and the Live Activity start a recording without leaving the app you are in. Uses some battery while active.")
             }
             Section {
+                Picker("Email", selection: Bindable(state).emailDelivery) {
+                    ForEach(EmailDelivery.allCases) { delivery in
+                        Text(delivery.title).tag(delivery)
+                    }
+                }
+            } header: {
+                Text("Agent email")
+            } footer: {
+                Text("Send with Gmail delivers through your own Gmail account via the Hermes backend, after you confirm each message. Requires the Gmail connection to be set up on the backend.")
+            }
+            Section {
                 TextField(
                     "Phone number or email",
                     text: Bindable(state).defaultMessageRecipient

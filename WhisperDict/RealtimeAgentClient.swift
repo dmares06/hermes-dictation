@@ -254,6 +254,12 @@ final class RealtimeAgentClient: NSObject {
                   let body = arguments["body"] as? String
             else { return nil }
             return VoiceAgentAction.validatedEmail(recipient: recipient, subject: subject, body: body)
+        case "send_email":
+            guard let recipient = arguments["recipient"] as? String,
+                  let subject = arguments["subject"] as? String,
+                  let body = arguments["body"] as? String
+            else { return nil }
+            return VoiceAgentAction.validatedSentEmail(recipient: recipient, subject: subject, body: body)
         case "prepare_note":
             guard let body = arguments["body"] as? String else { return nil }
             return VoiceAgentAction.validatedNote(body)

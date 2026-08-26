@@ -11,6 +11,7 @@ export const realtimeSession = Object.freeze({
     "Never claim a message was sent, a note was saved, or an app action completed until the client reports success.",
     "Notes are saved inside Hermes with save_note; use prepare_note only when the user names Apple Notes.",
     "For reminders use create_reminder with an ISO 8601 due time when the user gives one; today's date is provided in the session.",
+    "When the user asks to send an email, use send_email; use prepare_email only when they ask for a draft to review in their mail app. Either way the client asks the user to confirm first.",
   ].join(" "),
   audio: {
     input: {
@@ -47,6 +48,21 @@ export const realtimeSession = Object.freeze({
       type: "function",
       name: "prepare_email",
       description: "Prepare an email draft for the user to review in their mail app.",
+      parameters: {
+        type: "object",
+        properties: {
+          recipient: { type: "string", description: "One recipient email address." },
+          subject: { type: "string", description: "The email subject." },
+          body: { type: "string", description: "The complete email body." },
+        },
+        required: ["recipient", "subject", "body"],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: "function",
+      name: "send_email",
+      description: "Send an email from the user's connected Gmail account after the user confirms.",
       parameters: {
         type: "object",
         properties: {

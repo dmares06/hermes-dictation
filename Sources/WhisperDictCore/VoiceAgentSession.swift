@@ -78,6 +78,23 @@ public struct EmailAddress: Equatable, Sendable {
     }
 }
 
+/// Where a finished email goes once the user confirms it.
+public enum EmailDelivery: String, CaseIterable, Identifiable, Sendable {
+    /// Opens a `mailto:` draft in the default mail app; the user taps Send there.
+    case mailApp
+    /// Sends through the connected Gmail account via the Hermes backend.
+    case gmail
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .mailApp: "Draft in Mail app"
+        case .gmail: "Send with Gmail"
+        }
+    }
+}
+
 public struct EmailDraft: Equatable, Sendable {
     public let recipient: String
     public let subject: String
@@ -103,6 +120,8 @@ public enum VoiceAgentDestination: String, Equatable, Sendable {
 public enum VoiceAgentAction: Equatable, Sendable {
     case open(VoiceAgentDestination)
     case composeEmail(EmailDraft)
+    /// Sends for real, through the backend's Gmail connection.
+    case sendEmail(EmailDraft)
     /// Hands the text to the system share sheet for Apple Notes.
     case shareNote(String)
     /// Saves inside Hermes' own notes — no other app involved.
@@ -115,6 +134,7 @@ public enum VoiceAgentAction: Equatable, Sendable {
         switch self {
         case .saveNote: "Save note"
         case .createReminder: "Add reminder"
+        case .sendEmail: "Send with Gmail"
         case .open(.gmailWeb): "Open Gmail"
         case .open(.appSettings): "Open Settings"
         case .open(.maps): "Open Maps"
@@ -149,6 +169,26 @@ public enum VoiceAgentAction: Equatable, Sendable {
     public static func validatedNote(_ body: String) -> VoiceAgentAction? {
         guard let body = boundedText(body, limit: VoiceAgentLimits.note) else { return nil }
         return .shareNote(body)
+    }
+
+    public static func validatedSentEmail(
+        recipient: String,
+        subject: String,
+        body: String
+    ) -> VoiceAgentAction? {
+        guard case .composeEmail(let draft)? = validatedEmail(recipient: recipient, subject: subject, body: body)
+        else { return nil }
+        return .sendEmail(draft)
+    }
+
+    /// Re-targets an email action to the user's delivery preference, so a
+    /// model that chose send_email cannot send when Gmail is not enabled.
+    public func retargetedEmail(to delivery: EmailDelivery) -> VoiceAgentAction {
+        switch (self, delivery) {
+        case (.sendEmail(let draft), .mailApp): .composeEmail(draft)
+        case (.composeEmail(let draft), .gmail): .sendEmail(draft)
+        default: self
+        }
     }
 
     public static func validatedSavedNote(_ body: String) -> VoiceAgentAction? {
@@ -264,6 +304,9 @@ public struct VoiceAgentSession: Sendable {
 
     private var state: State = .idle
 
+    /// Set by the app from Settings before each conversation.
+    public var emailDelivery: EmailDelivery = .mailApp
+
     public init() {}
 
     public var step: VoiceAgentStep {
@@ -335,6 +378,8 @@ public struct VoiceAgentSession: Sendable {
         switch action {
         case .composeEmail:
             message = "Opening your email draft. Review it there and choose Send when you are ready."
+        case .sendEmail(let draft):
+            message = "Sending the email to \(draft.recipient) through Gmail."
         case .shareNote:
             message = "Opening the share sheet. Choose Notes, then save it there."
         case .saveNote:
@@ -480,12 +525,12 @@ public struct VoiceAgentSession: Sendable {
         guard value.count <= VoiceAgentLimits.emailBody else {
             return VoiceAgentTurn(assistantMessage: "That email body is too long. Please keep it under 4,000 characters.")
         }
-        let action = VoiceAgentAction.composeEmail(
-            EmailDraft(recipient: recipient, subject: subject, body: value)
-        )
+        let draft = EmailDraft(recipient: recipient, subject: subject, body: value)
+        let action: VoiceAgentAction = emailDelivery == .gmail ? .sendEmail(draft) : .composeEmail(draft)
         state = .confirmation(action)
+        let next = emailDelivery == .gmail ? "send it with Gmail" : "open the draft"
         return VoiceAgentTurn(
-            assistantMessage: "Your email to \(recipient) is ready to review. Say confirm to open the draft, or cancel."
+            assistantMessage: "Your email to \(recipient) is ready to review. Say confirm to \(next), or cancel."
         )
     }
 

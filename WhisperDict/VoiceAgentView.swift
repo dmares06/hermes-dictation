@@ -361,7 +361,7 @@ private struct PendingActionCard: View {
     @ViewBuilder
     private var actionDetails: some View {
         switch action {
-        case .composeEmail(let draft):
+        case .composeEmail(let draft), .sendEmail(let draft):
             detail("To", draft.recipient)
             detail("Subject", draft.subject)
             detail("Body", draft.body)
@@ -403,6 +403,7 @@ private struct PendingActionCard: View {
     private var confirmTitle: String {
         switch action {
         case .composeEmail: "Open email draft"
+        case .sendEmail: "Send with Gmail"
         case .shareNote: "Share note"
         case .saveNote: "Save note"
         case .createReminder: "Add reminder"

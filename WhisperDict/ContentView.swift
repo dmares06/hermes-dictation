@@ -78,7 +78,9 @@ struct ContentView: View {
             wireListeningWindow()
             refreshListeningWindow()
             agent.notes = notes
+            agent.emailDelivery = settings.emailDelivery
         }
+        .onChange(of: settings.emailDelivery) { _, delivery in agent.emailDelivery = delivery }
         .sheet(item: $reminderPrefill) { text in
             TranscriptReminderSheet(text: text) { draft in
                 Task { await notes.addReminder(draft) }
