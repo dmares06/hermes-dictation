@@ -160,6 +160,9 @@ final class DictationSessionController {
 
         do {
             try recorder.start()
+            // Load the model while the user is still talking, so its cost does
+            // not land between them stopping and seeing text.
+            Task { await transcriber.prewarm(modelPath: modelPath) }
             let startedAt = Date()
             isKeyboardHandoffSession = keyboardHandoff
             wasInterrupted = false
