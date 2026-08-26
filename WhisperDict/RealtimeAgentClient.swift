@@ -257,6 +257,13 @@ final class RealtimeAgentClient: NSObject {
         case "prepare_note":
             guard let body = arguments["body"] as? String else { return nil }
             return VoiceAgentAction.validatedNote(body)
+        case "save_note":
+            guard let body = arguments["body"] as? String else { return nil }
+            return VoiceAgentAction.validatedSavedNote(body)
+        case "create_reminder":
+            guard let title = arguments["title"] as? String else { return nil }
+            let due = (arguments["due"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) }
+            return VoiceAgentAction.validatedReminder(title: title, dueDate: due)
         case "open_destination":
             guard let destination = arguments["destination"] as? String else { return nil }
             return VoiceAgentAction.validatedDestination(destination)

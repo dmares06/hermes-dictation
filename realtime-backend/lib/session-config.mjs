@@ -9,6 +9,8 @@ export const realtimeSession = Object.freeze({
     "For apps or workflows not in the destination list, use run_shortcut only when the user names an existing Apple Shortcut.",
     "A function call prepares an action for review; it never means the action has already happened.",
     "Never claim a message was sent, a note was saved, or an app action completed until the client reports success.",
+    "Notes are saved inside Hermes with save_note; use prepare_note only when the user names Apple Notes.",
+    "For reminders use create_reminder with an ISO 8601 due time when the user gives one; today's date is provided in the session.",
   ].join(" "),
   audio: {
     input: {
@@ -66,6 +68,36 @@ export const realtimeSession = Object.freeze({
           body: { type: "string", description: "The complete note text." },
         },
         required: ["body"],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: "function",
+      name: "save_note",
+      description: "Save a note inside Hermes after the user confirms. Preferred over prepare_note.",
+      parameters: {
+        type: "object",
+        properties: {
+          body: { type: "string", description: "The complete note text." },
+        },
+        required: ["body"],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: "function",
+      name: "create_reminder",
+      description: "Create a reminder in the iPhone Reminders app after the user confirms.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "What to remind the user about, as a short imperative." },
+          due: {
+            type: "string",
+            description: "Optional due time as an ISO 8601 timestamp with timezone offset, e.g. 2026-08-27T09:00:00-04:00.",
+          },
+        },
+        required: ["title"],
         additionalProperties: false,
       },
     },

@@ -127,15 +127,16 @@ final class VoiceAgentSessionTests: XCTestCase {
         XCTAssertTrue(response.assistantMessage.contains("too long"))
     }
 
-    func testNoteJourneyRequiresReviewBeforeSharing() {
+    func testNoteJourneyRequiresReviewBeforeSaving() {
         var session = VoiceAgentSession()
         XCTAssertEqual(session.receive("Create a new note").assistantMessage, "What should the note say?")
 
         let review = session.receive("Pick up medicine at five.")
 
-        XCTAssertEqual(session.pendingAction, .shareNote("Pick up medicine at five."))
+        // Notes now live inside Hermes; Apple Notes is only used when asked for by name.
+        XCTAssertEqual(session.pendingAction, .saveNote("Pick up medicine at five."))
         XCTAssertNil(review.action)
-        XCTAssertTrue(review.assistantMessage.contains("share sheet"))
+        XCTAssertTrue(review.assistantMessage.contains("save it in Hermes"))
     }
 
     func testOpenNotesRequestUsesSafeNoteFlowInsteadOfPrivateDeepLink() {

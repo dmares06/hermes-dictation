@@ -103,12 +103,18 @@ public enum VoiceAgentDestination: String, Equatable, Sendable {
 public enum VoiceAgentAction: Equatable, Sendable {
     case open(VoiceAgentDestination)
     case composeEmail(EmailDraft)
+    /// Hands the text to the system share sheet for Apple Notes.
     case shareNote(String)
+    /// Saves inside Hermes' own notes — no other app involved.
+    case saveNote(String)
+    case createReminder(ReminderDraft)
     case composeMessage(String)
     case runShortcut(String)
 
     public var reviewTitle: String {
         switch self {
+        case .saveNote: "Save note"
+        case .createReminder: "Add reminder"
         case .open(.gmailWeb): "Open Gmail"
         case .open(.appSettings): "Open Settings"
         case .open(.maps): "Open Maps"
@@ -143,6 +149,16 @@ public enum VoiceAgentAction: Equatable, Sendable {
     public static func validatedNote(_ body: String) -> VoiceAgentAction? {
         guard let body = boundedText(body, limit: VoiceAgentLimits.note) else { return nil }
         return .shareNote(body)
+    }
+
+    public static func validatedSavedNote(_ body: String) -> VoiceAgentAction? {
+        guard let body = boundedText(body, limit: VoiceAgentLimits.note) else { return nil }
+        return .saveNote(body)
+    }
+
+    public static func validatedReminder(title: String, dueDate: Date?) -> VoiceAgentAction? {
+        guard let title = boundedText(title, limit: ReminderDraft.maximumTitleLength) else { return nil }
+        return .createReminder(ReminderDraft(title: title, dueDate: dueDate))
     }
 
     public static func validatedDestination(_ value: String) -> VoiceAgentAction? {
@@ -210,12 +226,13 @@ public enum VoiceAgentStep: Equatable, Sendable {
     case collectingEmailSubject
     case collectingEmailBody
     case collectingNote
+    case collectingAppleNote
     case collectingMessage
     case awaitingConfirmation
 
     public var collectsProse: Bool {
         switch self {
-        case .collectingEmailBody, .collectingNote, .collectingMessage:
+        case .collectingEmailBody, .collectingNote, .collectingAppleNote, .collectingMessage:
             true
         case .idle, .collectingEmailRecipient, .collectingEmailSubject, .awaitingConfirmation:
             false
@@ -240,6 +257,7 @@ public struct VoiceAgentSession: Sendable {
         case emailSubject(recipient: String)
         case emailBody(recipient: String, subject: String)
         case note
+        case appleNote
         case message
         case confirmation(VoiceAgentAction)
     }
@@ -255,6 +273,7 @@ public struct VoiceAgentSession: Sendable {
         case .emailSubject: .collectingEmailSubject
         case .emailBody: .collectingEmailBody
         case .note: .collectingNote
+        case .appleNote: .collectingAppleNote
         case .message: .collectingMessage
         case .confirmation: .awaitingConfirmation
         }
@@ -265,7 +284,7 @@ public struct VoiceAgentSession: Sendable {
         return action
     }
 
-    public mutating func receive(_ input: String) -> VoiceAgentTurn {
+    public mutating func receive(_ input: String, now: Date = Date()) -> VoiceAgentTurn {
         let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else {
             return VoiceAgentTurn(assistantMessage: "I didn't hear anything. Please try again.")
@@ -286,7 +305,7 @@ public struct VoiceAgentSession: Sendable {
 
         switch state {
         case .idle:
-            return begin(intent: intent)
+            return begin(intent: intent, raw: value, now: now)
         case .emailRecipient:
             return collectRecipient(value)
         case .emailSubject(let recipient):
@@ -295,6 +314,8 @@ public struct VoiceAgentSession: Sendable {
             return collectEmailBody(value, recipient: recipient, subject: subject)
         case .note:
             return collectNote(value)
+        case .appleNote:
+            return collectAppleNote(value)
         case .message:
             return collectMessage(value)
         case .confirmation:
@@ -316,6 +337,12 @@ public struct VoiceAgentSession: Sendable {
             message = "Opening your email draft. Review it there and choose Send when you are ready."
         case .shareNote:
             message = "Opening the share sheet. Choose Notes, then save it there."
+        case .saveNote:
+            message = "Saving it to your notes in Hermes."
+        case .createReminder(let draft):
+            message = draft.dueDate == nil
+                ? "Adding the reminder."
+                : "Adding the reminder with an alert."
         case .composeMessage:
             message = "Opening a message draft. Choose the recipient, review it, and tap Send when you are ready."
         case .runShortcut(let name):
@@ -346,7 +373,7 @@ public struct VoiceAgentSession: Sendable {
         )
     }
 
-    private mutating func begin(intent: String) -> VoiceAgentTurn {
+    private mutating func begin(intent: String, raw: String, now: Date) -> VoiceAgentTurn {
         if Self.containsAny(intent, phrases: ["compose email", "compose an email", "write email", "write an email", "draft email", "draft an email", "send email", "send an email", "open compose"]) {
             state = .emailRecipient
             return VoiceAgentTurn(assistantMessage: "Who is the email for?")
@@ -356,12 +383,29 @@ public struct VoiceAgentSession: Sendable {
             return VoiceAgentTurn(assistantMessage: "What should the message say?")
         }
         if intent.contains("note"),
-           Self.containsAny(intent, phrases: ["are you able", "can you save", "save that", "save it", "in my notes app"]) {
+           Self.containsAny(intent, phrases: ["are you able", "can you save", "could you save"]) {
             return VoiceAgentTurn(
-                assistantMessage: "I can prepare the note and open the system share sheet. iOS still requires you to choose Notes and tap Save; I can't tap inside Notes for you."
+                assistantMessage: "I can save notes right here in Hermes. For Apple Notes I can open the share sheet, where you choose Notes and tap Save; iOS doesn't let me tap inside Notes for you."
             )
         }
-        if intent.contains("note"), Self.containsAny(intent, phrases: ["create", "write", "start", "new", "open"]) {
+        if Self.containsAny(intent, phrases: ["remind me", "reminder"]) {
+            guard let draft = ReminderParser.parse(raw, now: now),
+                  let action = VoiceAgentAction.validatedReminder(title: draft.title, dueDate: draft.dueDate)
+            else {
+                return VoiceAgentTurn(assistantMessage: "What should I remind you about?")
+            }
+            state = .confirmation(action)
+            let when = draft.dueDate.map { " " + Self.spokenDate($0) } ?? ""
+            return VoiceAgentTurn(
+                assistantMessage: "I'll remind you to \(draft.title.lowercased())\(when). Say confirm to add it."
+            )
+        }
+        if intent.contains("note"),
+           Self.containsAny(intent, phrases: ["apple notes", "notes app", "in notes", "share to notes", "share it to notes"]) {
+            state = .appleNote
+            return VoiceAgentTurn(assistantMessage: "What should the note say? I'll hand it to Apple Notes.")
+        }
+        if intent.contains("note"), Self.containsAny(intent, phrases: ["create", "write", "start", "new", "open", "save", "make", "take"]) {
             state = .note
             let message = intent.contains("open")
                 ? "I can help create a note. What should it say?"
@@ -449,11 +493,30 @@ public struct VoiceAgentSession: Sendable {
         guard value.count <= VoiceAgentLimits.note else {
             return VoiceAgentTurn(assistantMessage: "That note is too long. Please keep it under 8,000 characters.")
         }
+        let action = VoiceAgentAction.saveNote(value)
+        state = .confirmation(action)
+        return VoiceAgentTurn(
+            assistantMessage: "Your note is ready. Say confirm to save it in Hermes, or cancel."
+        )
+    }
+
+    private mutating func collectAppleNote(_ value: String) -> VoiceAgentTurn {
+        guard value.count <= VoiceAgentLimits.note else {
+            return VoiceAgentTurn(assistantMessage: "That note is too long. Please keep it under 8,000 characters.")
+        }
         let action = VoiceAgentAction.shareNote(value)
         state = .confirmation(action)
         return VoiceAgentTurn(
             assistantMessage: "Your note is ready. Say confirm to open the share sheet, then choose Notes."
         )
+    }
+
+    private static func spokenDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        formatter.doesRelativeDateFormatting = true
+        return formatter.string(from: date)
     }
 
     private mutating func collectMessage(_ value: String) -> VoiceAgentTurn {

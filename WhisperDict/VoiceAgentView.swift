@@ -367,6 +367,11 @@ private struct PendingActionCard: View {
             detail("Body", draft.body)
         case .shareNote(let text):
             detail("Note", text)
+        case .saveNote(let text):
+            detail("Note", text)
+        case .createReminder(let draft):
+            detail("Reminder", draft.title)
+            detail("When", draft.dueDate?.formatted(date: .abbreviated, time: .shortened) ?? "No time")
         case .composeMessage(let text):
             detail("Message", text)
         case .open(.gmailWeb):
@@ -399,6 +404,8 @@ private struct PendingActionCard: View {
         switch action {
         case .composeEmail: "Open email draft"
         case .shareNote: "Share note"
+        case .saveNote: "Save note"
+        case .createReminder: "Add reminder"
         case .composeMessage: "Open message draft"
         case .open(.gmailWeb): "Open Gmail"
         case .open(.appSettings): "Open Settings"

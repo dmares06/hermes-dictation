@@ -31,6 +31,8 @@ test("session exposes only the allowlisted review actions", () => {
       "prepare_message",
       "prepare_email",
       "prepare_note",
+      "save_note",
+      "create_reminder",
       "open_destination",
       "run_shortcut",
     ],

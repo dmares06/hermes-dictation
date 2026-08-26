@@ -52,6 +52,8 @@ final class VoiceAgentController {
     var showsMicrophoneSettings = false
     var sharePayload: VoiceAgentSharePayload?
     var messagePayload: MessageComposePayload?
+    /// Where in-app notes and reminders go; injected by the root view.
+    @ObservationIgnored var notes: NotesController?
 
     private let recorder: DictationAudioRecorder
     private let transcriber: DictationTranscriber
@@ -452,6 +454,18 @@ final class VoiceAgentController {
             await open(url, failureMessage: "I couldn't open your default mail app. Check that a mail app is configured.")
         case .shareNote(let text):
             sharePayload = VoiceAgentSharePayload(text: text)
+        case .saveNote(let text):
+            guard let notes, notes.saveNote(text) != nil else {
+                await reportHandoffFailure(notes?.lastError ?? "I couldn't save the note.")
+                return
+            }
+            await announce("Saved to your notes.")
+        case .createReminder(let draft):
+            guard let notes, await notes.addReminder(draft) != nil else {
+                await reportHandoffFailure(notes?.lastError ?? "I couldn't add the reminder.")
+                return
+            }
+            await announce(draft.dueDate == nil ? "Reminder added." : "Reminder added with an alert.")
         case .composeMessage(let text):
             messagePayload = MessageComposePayload(
                 body: text,
@@ -581,6 +595,13 @@ final class VoiceAgentController {
         if !opened {
             await reportHandoffFailure(failureMessage)
         }
+    }
+
+    private func announce(_ message: String) async {
+        messages.append(VoiceAgentMessage(role: .hermes, text: message))
+        phase = .speaking
+        await speaker.speak(message)
+        phase = .ready
     }
 
     private func reportHandoffFailure(_ message: String) async {

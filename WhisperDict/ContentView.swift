@@ -14,6 +14,7 @@ struct MessageComposePayload: Identifiable {
 struct ContentView: View {
     private enum RootTab: Hashable {
         case dictation
+        case notes
         case agent
     }
 
@@ -23,7 +24,9 @@ struct ContentView: View {
     @State private var activityHost: DictationActivityHost
     @State private var dictation: DictationSessionController
     @State private var listening: ListeningWindowController
+    @State private var notes = NotesController()
     @State private var agent = VoiceAgentController()
+    @State private var reminderPrefill: String?
     @State private var copiedText = ""
     @State private var selectedTab: RootTab = .dictation
     @State private var messagePayload: MessageComposePayload?
@@ -46,6 +49,10 @@ struct ContentView: View {
             dictationView
                 .tag(RootTab.dictation)
                 .tabItem { Label("Dictation", systemImage: "mic.fill") }
+
+            NotesView(controller: notes)
+                .tag(RootTab.notes)
+                .tabItem { Label("Notes", systemImage: "note.text") }
 
             VoiceAgentView(controller: agent, downloadService: downloadService)
                 .tag(RootTab.agent)
@@ -70,6 +77,12 @@ struct ContentView: View {
             handlePendingShortcutToggle()
             wireListeningWindow()
             refreshListeningWindow()
+            agent.notes = notes
+        }
+        .sheet(item: $reminderPrefill) { text in
+            TranscriptReminderSheet(text: text) { draft in
+                Task { await notes.addReminder(draft) }
+            }
         }
         .onChange(of: settings.listeningWindow) { _, _ in refreshListeningWindow() }
         .onChange(of: downloadService.isPrepared) { _, _ in refreshListeningWindow() }
@@ -180,7 +193,11 @@ struct ContentView: View {
                                     body: dictation.transcript,
                                     recipients: settings.messageRecipients
                                 )
-                            }
+                            },
+                            noteAction: {
+                                if notes.saveNote(dictation.transcript) != nil { selectedTab = .notes }
+                            },
+                            remindAction: { reminderPrefill = dictation.transcript }
                         )
                     }
 
@@ -376,6 +393,8 @@ private struct TranscriptCard: View {
     let copied: Bool
     let copyAction: () -> Void
     let messageAction: () -> Void
+    let noteAction: () -> Void
+    let remindAction: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -383,12 +402,17 @@ private struct TranscriptCard: View {
                 Label("Latest transcript", systemImage: "text.quote")
                     .font(.headline)
                 Spacer()
-                HStack(spacing: 12) {
-                    Button("Message", systemImage: "message.fill", action: messageAction)
-                    Button(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc", action: copyAction)
-                }
-                .font(.subheadline.weight(.semibold))
+                Button(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc", action: copyAction)
+                    .font(.subheadline.weight(.semibold))
             }
+            HStack(spacing: 10) {
+                Button("Message", systemImage: "message.fill", action: messageAction)
+                Button("Note", systemImage: "note.text.badge.plus", action: noteAction)
+                Button("Remind", systemImage: "bell.badge", action: remindAction)
+            }
+            .font(.subheadline.weight(.semibold))
+            .buttonStyle(.bordered)
+            .tint(.mint)
             Text(transcript)
                 .font(.body)
                 .textSelection(.enabled)
@@ -435,6 +459,49 @@ struct MessageComposeView: UIViewControllerRepresentable {
             controller.dismiss(animated: true)
         }
     }
+}
+
+/// Turns a dictated sentence into a reminder, showing how it was understood
+/// before anything is added.
+private struct TranscriptReminderSheet: View {
+    let text: String
+    let onAdd: (ReminderDraft) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private var draft: ReminderDraft? { ReminderParser.parse(text) }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("From your dictation") { Text(text) }
+                Section("Reminder") {
+                    if let draft {
+                        LabeledContent("Title", value: draft.title)
+                        LabeledContent("When", value: draft.dueDate?.formatted(date: .abbreviated, time: .shortened) ?? "No time")
+                    } else {
+                        Text("Couldn't find something to remind you about in that sentence.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Add reminder")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        if let draft { onAdd(draft) }
+                        dismiss()
+                    }
+                    .disabled(draft == nil)
+                }
+            }
+        }
+    }
+}
+
+extension String: @retroactive Identifiable {
+    public var id: String { self }
 }
 
 private struct HistorySection: View {
