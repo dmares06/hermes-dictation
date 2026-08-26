@@ -22,6 +22,10 @@ final class DictationAudioRecorder {
 
     private(set) var isRecording = false
 
+    /// False while a listening window owns the audio session: reconfiguring
+    /// the category here would stop the keepalive and drop residency.
+    var managesAudioSession = true
+
     init() {
         let center = NotificationCenter.default
         observerTokens.append(center.addObserver(
@@ -56,8 +60,10 @@ final class DictationAudioRecorder {
 
     func start() throws {
         guard !isRecording else { return }
-        try session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP])
-        try session.setActive(true)
+        if managesAudioSession {
+            try session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP])
+            try session.setActive(true)
+        }
 
         let engine = AVAudioEngine()
         let input = engine.inputNode
@@ -89,7 +95,9 @@ final class DictationAudioRecorder {
             input.removeTap(onBus: 0)
             audioFile = nil
             recordingURL = nil
-            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            if managesAudioSession {
+                try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            }
             try? FileManager.default.removeItem(at: url)
             throw error
         }
@@ -103,7 +111,9 @@ final class DictationAudioRecorder {
         audioFile = nil
         isRecording = false
         onLevel?(0)
-        try? session.setActive(false, options: .notifyOthersOnDeactivation)
+        if managesAudioSession {
+            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+        }
         defer { recordingURL = nil }
         return recordingURL
     }

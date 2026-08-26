@@ -16,6 +16,17 @@ struct SettingsView: View {
                 Toggle("Auto-capitalize", isOn: Bindable(state).autoCapitalize)
             }
             Section {
+                Picker("Keep listening for", selection: Bindable(state).listeningWindow) {
+                    ForEach(ListeningWindowDuration.allCases) { duration in
+                        Text(duration.title).tag(duration)
+                    }
+                }
+            } header: {
+                Text("Background listening")
+            } footer: {
+                Text("After you use WhisperDict, it stays ready in the background for this long. During that time the keyboard's Talk button, the Action Button, and the Live Activity start a recording without leaving the app you are in. Uses some battery while active.")
+            }
+            Section {
                 TextField(
                     "Phone number or email",
                     text: Bindable(state).defaultMessageRecipient

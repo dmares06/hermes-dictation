@@ -28,6 +28,15 @@ public struct BackgroundDictationActivityContentState: Equatable, Sendable {
 }
 
 public enum BackgroundDictationActivityContent {
+    /// The listening window is open and nothing is being recorded.
+    public static func idle(now: Date = Date()) -> BackgroundDictationActivityContentState {
+        .init(phase: .idle, startedAt: now)
+    }
+
+    public static func failed(now: Date = Date()) -> BackgroundDictationActivityContentState {
+        .init(phase: .failed, startedAt: now)
+    }
+
     public static func recording(startedAt: Date) -> BackgroundDictationActivityContentState {
         .init(phase: .recording, startedAt: startedAt)
     }
@@ -215,6 +224,24 @@ public struct KeyboardTranscriptInsertionGate: Sendable {
     }
 }
 
+/// Starts a dictation from the Live Activity while the app is resident.
+///
+/// Runs in the widget process, so it cannot touch the recorder; it only
+/// leaves a request the resident app will pick up within a poll interval.
+@available(iOS 18.0, macOS 26.0, *)
+public struct StartListeningDictationIntent: AppIntent {
+    public static let title: LocalizedStringResource = "Talk to WhisperDict"
+    public static let description = IntentDescription("Starts a private dictation in the background.")
+
+    public init() {}
+
+    public func perform() async throws -> some IntentResult {
+        ListeningWindowState.requestStart()
+        DictationSignalCenter.post(.start)
+        return .result()
+    }
+}
+
 @available(iOS 18.0, macOS 26.0, *)
 public struct StopWhisperDictIntent: AppIntent {
     public static let title: LocalizedStringResource = "Stop WhisperDict"
@@ -224,6 +251,7 @@ public struct StopWhisperDictIntent: AppIntent {
 
     public func perform() async throws -> some IntentResult {
         BackgroundDictationState.requestStop()
+        DictationSignalCenter.post(.stop)
         return .result()
     }
 }

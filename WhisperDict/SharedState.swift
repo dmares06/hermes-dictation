@@ -28,6 +28,11 @@ final class SharedState {
     var defaultMessageRecipient: String {
         didSet { defaults.set(defaultMessageRecipient, forKey: Keys.defaultMessageRecipient) }
     }
+    /// How long the app stays resident after use so the keyboard and Action
+    /// Button can start a recording without bringing it forward.
+    var listeningWindow: ListeningWindowDuration {
+        didSet { defaults.set(listeningWindow.rawValue, forKey: Keys.listeningWindow) }
+    }
     var keyboardColor: AppearanceColor {
         didSet { appearanceStore.keyboardColor = keyboardColor }
     }
@@ -54,6 +59,9 @@ final class SharedState {
         self.autoCapitalize = self.defaults.object(forKey: Keys.autoCapitalize) as? Bool ?? true
         self.welcomeDone = self.defaults.bool(forKey: Keys.welcomeDone)
         self.defaultMessageRecipient = self.defaults.string(forKey: Keys.defaultMessageRecipient) ?? ""
+        self.listeningWindow = ListeningWindowDuration(
+            rawValue: self.defaults.string(forKey: Keys.listeningWindow) ?? ""
+        ) ?? .fiveMinutes
         self.keyboardColor = self.appearanceStore.keyboardColor
         self.recordButtonColor = self.appearanceStore.recordButtonColor
     }
@@ -71,6 +79,7 @@ final class SharedState {
         static let autoCapitalize = "autoCapitalize"
         static let welcomeDone = "welcomeDone"
         static let defaultMessageRecipient = "defaultMessageRecipient"
+        static let listeningWindow = "listeningWindow"
         static let modelFolderPath = "modelFolderPath"
     }
 }

@@ -93,7 +93,7 @@ struct KeyboardView: View {
     }
 
     private var recordButtonTitle: String {
-        KeyboardHandoffGuidance.recorderButtonTitle(for: state.backgroundPhase)
+        KeyboardHandoffGuidance.recorderButtonTitle(for: state.backgroundPhase, listening: state.isListening)
     }
 
     private var recordControlLabel: some View {
@@ -117,9 +117,14 @@ struct KeyboardView: View {
         return switch state.backgroundPhase {
         case .recording: "Speak naturally, then tap Stop"
         case .transcribing: "Transcribing privately on this iPhone…"
-        case .ready: KeyboardHandoffGuidance.idleMessage(hasFullAccess: true)
-        case .failed: "Press the Action Button again, or open WhisperDict for details"
-        case .idle: KeyboardHandoffGuidance.idleMessage(hasFullAccess: true)
+        case .ready, .idle:
+            state.isListening
+                ? KeyboardHandoffGuidance.listeningMessage()
+                : KeyboardHandoffGuidance.idleMessage(hasFullAccess: true)
+        case .failed:
+            state.isListening
+                ? "Tap Talk to try again"
+                : "Press the Action Button again, or open WhisperDict for details"
         }
     }
 
@@ -127,7 +132,10 @@ struct KeyboardView: View {
         switch state.backgroundPhase {
         case .recording: "Stops recording so WhisperDict can transcribe and insert your words"
         case .transcribing: "WhisperDict is transcribing your recording"
-        case .idle, .ready, .failed: "Shows how to start Hermes dictation from any app"
+        case .idle, .ready, .failed:
+            state.isListening
+                ? "Starts recording in the background without leaving this app"
+                : "Shows how to start Hermes dictation from any app"
         }
     }
 

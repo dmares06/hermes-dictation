@@ -1,5 +1,6 @@
-import SwiftUI
+import AVFoundation
 import MessageUI
+import SwiftUI
 
 struct MessageComposePayload: Identifiable {
     let id = UUID()
@@ -19,7 +20,9 @@ struct ContentView: View {
     @Environment(SharedState.self) private var settings
     @Environment(\.scenePhase) private var scenePhase
     @State private var downloadService = ModelDownloadService()
-    @State private var dictation = DictationSessionController()
+    @State private var activityHost: DictationActivityHost
+    @State private var dictation: DictationSessionController
+    @State private var listening: ListeningWindowController
     @State private var agent = VoiceAgentController()
     @State private var copiedText = ""
     @State private var selectedTab: RootTab = .dictation
@@ -28,6 +31,15 @@ struct ContentView: View {
         BackgroundDictationState.Keys.foregroundToggleRequest,
         store: BackgroundDictationState.sharedDefaults
     ) private var foregroundToggleRequest = ""
+
+    init() {
+        // One activity host: the window starts the Live Activity while the
+        // app is visible and dictation updates it from the background.
+        let host = DictationActivityHost()
+        _activityHost = State(initialValue: host)
+        _dictation = State(initialValue: DictationSessionController(activityHost: host))
+        _listening = State(initialValue: ListeningWindowController(activityHost: host))
+    }
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -43,6 +55,7 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 handlePendingShortcutToggle()
+                refreshListeningWindow()
                 return
             }
             Task {
@@ -55,6 +68,17 @@ struct ContentView: View {
         .onAppear {
             downloadService.refresh(for: settings.modelSize)
             handlePendingShortcutToggle()
+            wireListeningWindow()
+            refreshListeningWindow()
+        }
+        .onChange(of: settings.listeningWindow) { _, _ in refreshListeningWindow() }
+        .onChange(of: downloadService.isPrepared) { _, _ in refreshListeningWindow() }
+        .onChange(of: listening.isListening) { _, isListening in
+            dictation.usesSharedAudioSession = isListening
+        }
+        .onChange(of: dictation.phase) { _, phase in
+            // Every finished dictation restarts the idle clock.
+            if phase == .ready { listening.noteActivity() }
         }
         .onChange(of: foregroundToggleRequest) { _, request in
             guard !request.isEmpty else { return }
@@ -89,6 +113,29 @@ struct ContentView: View {
     private func handlePendingShortcutToggle() {
         guard BackgroundDictationState.consumeForegroundToggleRequest() else { return }
         runShortcutToggle()
+    }
+
+    private func wireListeningWindow() {
+        listening.isBusy = { dictation.isRecording || dictation.isBusy }
+        listening.onStartRequested = {
+            guard downloadService.isPrepared else {
+                BackgroundDictationState.fail("Prepare the speech model in WhisperDict before recording.")
+                return
+            }
+            await dictation.startFromKeyboard(settings: settings)
+        }
+    }
+
+    /// The window only opens once the app can actually record: microphone
+    /// granted and a model on disk. Anything less falls back to launching.
+    private func refreshListeningWindow() {
+        guard downloadService.isPrepared,
+              AVAudioApplication.shared.recordPermission == .granted
+        else {
+            listening.deactivate()
+            return
+        }
+        listening.activate(duration: settings.listeningWindow)
     }
 
     private func runShortcutToggle() {

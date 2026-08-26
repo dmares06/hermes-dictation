@@ -1,6 +1,7 @@
 import Foundation
 
 public enum KeyboardRecorderAction: Equatable, Sendable {
+    case requestStart
     case requestStop
     case showTranscribing
     case showFailure
@@ -14,21 +15,38 @@ public enum KeyboardHandoffGuidance {
             : "Turn on Full Access for WhisperDict in Settings to insert recordings here"
     }
 
-    public static func recorderAction(for phase: BackgroundDictationPhase) -> KeyboardRecorderAction {
+    /// What the keyboard's main control should do when tapped.
+    ///
+    /// While the app is resident (`listening`), a tap starts a recording
+    /// directly — even after a failure, since retrying is what the user wants.
+    /// Otherwise the keyboard can only explain how to start one.
+    public static func recorderAction(
+        for phase: BackgroundDictationPhase,
+        listening: Bool = false
+    ) -> KeyboardRecorderAction {
         switch phase {
         case .recording: .requestStop
         case .transcribing: .showTranscribing
-        case .failed: .showFailure
-        case .idle, .ready: .showActionButtonGuidance
+        case .failed: listening ? .requestStart : .showFailure
+        case .idle, .ready: listening ? .requestStart : .showActionButtonGuidance
         }
     }
 
-    public static func recorderButtonTitle(for phase: BackgroundDictationPhase) -> String {
+    /// The label reflects capability: "Talk" is a real button only while the
+    /// app is resident and will hear the tap.
+    public static func recorderButtonTitle(
+        for phase: BackgroundDictationPhase,
+        listening: Bool = false
+    ) -> String {
         switch phase {
         case .recording: "Stop"
         case .transcribing: "Working"
-        case .idle, .ready, .failed: "Action Button"
+        case .idle, .ready, .failed: listening ? "Talk" : "Action Button"
         }
+    }
+
+    public static func listeningMessage() -> String {
+        "Tap Talk or press the Action Button. You stay in this app."
     }
 
     public static func micButtonMessage(hasFullAccess: Bool) -> String {

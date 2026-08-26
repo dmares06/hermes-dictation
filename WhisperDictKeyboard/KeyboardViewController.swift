@@ -58,14 +58,22 @@ final class KeyboardViewController: UIInputViewController {
         refreshBackgroundSession()
         if keyboardState.handoffStatus == nil,
            keyboardState.backgroundPhase == .idle || keyboardState.backgroundPhase == .ready {
-            keyboardState.handoffStatus = KeyboardHandoffGuidance.idleMessage(hasFullAccess: hasFullAccess)
+            keyboardState.handoffStatus = keyboardState.isListening
+                ? KeyboardHandoffGuidance.listeningMessage()
+                : KeyboardHandoffGuidance.idleMessage(hasFullAccess: hasFullAccess)
         }
     }
 
     private func openRecorder() {
-        switch KeyboardHandoffGuidance.recorderAction(for: BackgroundDictationState.phase()) {
+        let listening = ListeningWindowState.isAlive()
+        switch KeyboardHandoffGuidance.recorderAction(for: BackgroundDictationState.phase(), listening: listening) {
+        case .requestStart:
+            ListeningWindowState.requestStart()
+            DictationSignalCenter.post(.start)
+            keyboardState.handoffStatus = "Starting…"
         case .requestStop:
             BackgroundDictationState.requestStop()
+            DictationSignalCenter.post(.stop)
             keyboardState.handoffStatus = "Stopping…"
         case .showTranscribing:
             keyboardState.handoffStatus = "Transcribing on this iPhone…"
@@ -102,6 +110,15 @@ final class KeyboardViewController: UIInputViewController {
     private func refreshBackgroundSession() {
         let phase = BackgroundDictationState.phase()
         keyboardState.backgroundPhase = phase
+        let listening = ListeningWindowState.isAlive()
+        if listening != keyboardState.isListening {
+            keyboardState.isListening = listening
+            if phase == .idle || phase == .ready {
+                keyboardState.handoffStatus = listening
+                    ? KeyboardHandoffGuidance.listeningMessage()
+                    : KeyboardHandoffGuidance.idleMessage(hasFullAccess: hasFullAccess)
+            }
+        }
 
         let defaults = BackgroundDictationState.sharedDefaults
         let startedAt = defaults?.double(forKey: BackgroundDictationState.Keys.startedAt) ?? 0
@@ -127,4 +144,5 @@ final class KeyboardState {
     var recordButtonColor = AppearanceColor.defaultRecordButton
     var handoffStatus: String?
     var backgroundPhase: BackgroundDictationPhase = .idle
+    var isListening = false
 }
