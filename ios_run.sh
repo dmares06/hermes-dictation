@@ -7,6 +7,7 @@
 #   ./ios_run.sh --release            # build the Release configuration
 #   ./ios_run.sh --no-launch          # build + install only
 #   ./ios_run.sh --build-only         # build only
+#   ./ios_run.sh --latency            # report the last dictation's timings
 #
 # Note: devicectl prints "Failed to load provisioning parameter list ...
 # No provider was found." on every invocation. It is harmless noise, not a
@@ -23,6 +24,8 @@ CONFIGURATION="Debug"
 DEVICE_ID="${DEVICE_ID:-}"
 DO_INSTALL=1
 DO_LAUNCH=1
+SHOW_LATENCY=0
+APP_GROUP="group.com.dmares06.whisperdict"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -30,7 +33,8 @@ while [ $# -gt 0 ]; do
         --release) CONFIGURATION="Release"; shift ;;
         --no-launch) DO_LAUNCH=0; shift ;;
         --build-only) DO_LAUNCH=0; DO_INSTALL=0; shift ;;
-        -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+        --latency) SHOW_LATENCY=1; shift ;;
+        -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -81,6 +85,49 @@ else
 fi
 
 echo "📱 Target: ${DEVICE_NAME} (${DEVICE_ID})"
+
+# Where the last transcription's time actually went. The app writes the
+# breakdown into the app group after every dictation; without pulling it back,
+# any latency claim is guesswork.
+if [ "$SHOW_LATENCY" -eq 1 ]; then
+    LATENCY_DIR="$(mktemp -d -t whisperdict-latency)"
+    if ! xcrun devicectl device copy from \
+        --device "$DEVICE_ID" \
+        --domain-type appGroupDataContainer \
+        --domain-identifier "$APP_GROUP" \
+        --source "Library/Preferences/${APP_GROUP}.plist" \
+        --destination "${LATENCY_DIR}/${APP_GROUP}.plist" >/dev/null 2>&1; then
+        echo "❌ Could not read the app group. Unlock the phone and dictate once first." >&2
+        rm -rf "$LATENCY_DIR"
+        exit 1
+    fi
+    python3 - "${LATENCY_DIR}/${APP_GROUP}.plist" << 'LATENCY_PY'
+import datetime, plistlib, sys
+
+with open(sys.argv[1], "rb") as handle:
+    record = plistlib.load(handle).get("lastDictationLatency")
+
+if not record:
+    print("No dictation recorded yet on this build. Dictate once, then run this again.")
+    raise SystemExit(0)
+
+at = datetime.datetime.fromtimestamp(record["at"]).strftime("%H:%M:%S")
+total, audio = record["totalSeconds"], record["audioSeconds"]
+speed = f"{audio / total:.1f}x real time" if total else "n/a"
+print(f"Last dictation at {at}: {total:.2f}s for {audio:.1f}s of speech ({speed})")
+for label, key in (
+    ("model load", "modelLoadingSeconds"),
+    ("mel", "logmelSeconds"),
+    ("encode", "encodingSeconds"),
+    ("decode", "decodingLoopSeconds"),
+    ("fallback retries", "decodingFallbackSeconds"),
+):
+    print(f"  {label:<17} {record.get(key, 0):.2f}s")
+print(f"  decode steps      {record.get('decodingLoops', 0):.0f}, fallbacks {record.get('fallbacks', 0):.0f}")
+LATENCY_PY
+    rm -rf "$LATENCY_DIR"
+    exit 0
+fi
 
 # The app authenticates to the Hermes backend with WHISPERDICT_CLIENT_TOKEN,
 # expanded into Info.plist at build time. Nothing in the project supplies it,

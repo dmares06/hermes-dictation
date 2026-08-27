@@ -8,6 +8,7 @@ final class KeyboardViewController: UIInputViewController {
     private let transcriptStore = TranscriptStore()
     private let appearanceStore = AppearanceStore()
     private var sessionTimer: Timer?
+    private var transcriptObservation: DictationSignalObservation?
     private var insertionGate = KeyboardTranscriptInsertionGate(currentRevision: 0)
 
     override func viewDidLoad() {
@@ -42,12 +43,18 @@ final class KeyboardViewController: UIInputViewController {
         super.viewWillAppear(animated)
         refreshSharedTranscript()
         startSessionTimer()
+        // The timer is the fallback; this is what makes the text land the
+        // moment the app has it. The handler runs off the main thread.
+        transcriptObservation = DictationSignalCenter.observe(.transcriptReady) { [weak self] in
+            DispatchQueue.main.async { self?.refreshSharedTranscript() }
+        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         sessionTimer?.invalidate()
         sessionTimer = nil
+        transcriptObservation = nil
     }
 
     private func refreshSharedTranscript() {

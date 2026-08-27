@@ -31,6 +31,35 @@ Known costs: the keepalive uses some battery while the window is open; Low
 Power Mode or a phone call can end residency, after which Talk falls back to
 opening the app.
 
+#### Dictation latency
+
+The wait a user actually feels is model load + audio conversion + one encoder
+pass + the decode loop. Each was addressed where it was payable:
+
+- **Model load** is prewarmed when the listening window opens and again at
+  record time, so it overlaps with speaking rather than following it. An
+  in-flight load is joined, never restarted. `modelLoadingSeconds` in the
+  latency record is the check: anything above zero means a prewarm was missed.
+- **Audio conversion** is gone. The tap resamples to Whisper's 16 kHz mono as
+  it captures, so stopping hands over a ready sample array — no file written
+  during capture, no decode-and-resample pass afterwards.
+- **Decoding** is tuned for dictation rather than media: the language is
+  pinned, timestamp tokens are suppressed (nothing here reads them, and they
+  are a large share of the tokens emitted for a short utterance), and
+  temperature fallback is capped at one retry instead of five, which bounds
+  what a noisy clip can cost. Past 30 s, VAD chunking decodes the pieces
+  concurrently.
+- **Delivery** no longer waits on the keyboard's 250 ms poll: the app posts a
+  `transcriptReady` Darwin ping and the keyboard inserts on it.
+
+The encoder pass is the floor and scales with model size — Whisper always
+encodes a padded 30-second window, so a two-second clip costs the same
+encode as a twenty-second one. Settings → Model is the lever there: `tiny`
+and `base` are several times faster than `small` at some accuracy cost.
+
+`./ios_run.sh --latency` prints where the last dictation's time went, read
+back from the app group. Measure before changing anything.
+
 ### Phase 2 — Notes and reminders
 
 - Notes live inside Hermes (Notes tab, search, edit). Every transcript has a

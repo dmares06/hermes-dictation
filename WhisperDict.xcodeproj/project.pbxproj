@@ -58,6 +58,7 @@
 		C10000000000000000000001 /* ListeningWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000011 /* ListeningWindow.swift */; };
 		B80000000000000000000001 /* MessageRecipients.swift in Sources */ = {isa = PBXBuildFile; fileRef = B80000000000000000000011 /* MessageRecipients.swift */; };
 		B60000000000000000000001 /* RealtimeAgentClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60000000000000000000011 /* RealtimeAgentClient.swift */; };
+		BD0000000000000000000001 /* DictationLatencyLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD0000000000000000000011 /* DictationLatencyLog.swift */; };
 		B60000000000000000000002 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = B60000000000000000000031 /* WebRTC */; };
 		B70000000000000000000001 /* HermesConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B70000000000000000000011 /* HermesConversationStore.swift */; };
 /* End PBXBuildFile section */
@@ -143,6 +144,7 @@
 		C10000000000000000000011 /* ListeningWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningWindow.swift; sourceTree = "<group>"; };
 		B80000000000000000000011 /* MessageRecipients.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageRecipients.swift; sourceTree = "<group>"; };
 		B60000000000000000000011 /* RealtimeAgentClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeAgentClient.swift; sourceTree = "<group>"; };
+		BD0000000000000000000011 /* DictationLatencyLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationLatencyLog.swift; sourceTree = "<group>"; };
 		B70000000000000000000011 /* HermesConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesConversationStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -188,6 +190,7 @@
 				A1000000000000000000006C /* VoiceAgentController.swift */,
 				A1000000000000000000006D /* VoiceAgentView.swift */,
 				B60000000000000000000011 /* RealtimeAgentClient.swift */,
+				BD0000000000000000000011 /* DictationLatencyLog.swift */,
 				B20000000000000000000013 /* BackgroundDictationIntent.swift */,
 				B40000000000000000000011 /* OnboardingView.swift */,
 				D60000000000000000000011 /* HermesBackendClient.swift */,
@@ -425,6 +428,7 @@
 				A10000000000000000000069 /* VoiceAgentController.swift in Sources */,
 				A1000000000000000000006A /* VoiceAgentView.swift in Sources */,
 				B60000000000000000000001 /* RealtimeAgentClient.swift in Sources */,
+				BD0000000000000000000001 /* DictationLatencyLog.swift in Sources */,
 				A1000000000000000000006E /* VoiceTurnDetector.swift in Sources */,
 				B20000000000000000000002 /* BackgroundDictationState.swift in Sources */,
 				B20000000000000000000005 /* WhisperDictActivityAttributes.swift in Sources */,

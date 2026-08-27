@@ -14,6 +14,10 @@ import CoreFoundation
 public enum DictationSignal: String, CaseIterable, Sendable {
     case start = "com.dmares06.whisperdict.signal.start"
     case stop = "com.dmares06.whisperdict.signal.stop"
+    /// A finished transcript is in the app group. Without it the keyboard
+    /// would not show the text until its next poll, adding up to a quarter
+    /// second to every dictation for no reason.
+    case transcriptReady = "com.dmares06.whisperdict.signal.transcriptReady"
 
     public var name: CFNotificationName { CFNotificationName(rawValue as CFString) }
 }

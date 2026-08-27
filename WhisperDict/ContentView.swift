@@ -158,6 +158,9 @@ struct ContentView: View {
             return
         }
         listening.activate(duration: settings.listeningWindow)
+        // The window opening is the signal that a dictation is coming, so the
+        // model load happens now rather than after the user stops speaking.
+        Task { await dictation.prewarmModel(settings: settings) }
     }
 
     private func runShortcutToggle() {

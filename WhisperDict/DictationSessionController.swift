@@ -140,6 +140,16 @@ final class DictationSessionController {
         UIApplication.shared.open(url)
     }
 
+    /// Loads the speech model before there is anything to transcribe.
+    ///
+    /// Called when a dictation becomes plausible — the app coming forward, or
+    /// the listening window opening — so the load never lands between the
+    /// user finishing a sentence and seeing text.
+    func prewarmModel(settings: SharedState) async {
+        guard !isRecording, !isBusy, let modelPath = settings.modelFolderPath else { return }
+        await transcriber.prewarm(modelPath: modelPath)
+    }
+
     private func startRecording(settings: SharedState, keyboardHandoff: Bool = false) async {
         guard !isBusy else { return }
         let defaults = UserDefaults(suiteName: SharedState.appGroupID)
@@ -191,7 +201,7 @@ final class DictationSessionController {
     }
 
     private func stopAndTranscribe(settings: SharedState? = nil, interrupted: Bool = false) async {
-        guard let audioURL = recorder.stop() else {
+        guard let samples = recorder.stop() else {
             if isRecording {
                 let message = "The recording was empty. Please try again."
                 if isKeyboardHandoffSession {
@@ -216,7 +226,6 @@ final class DictationSessionController {
             )
         }
 
-        defer { try? FileManager.default.removeItem(at: audioURL) }
         let defaults = UserDefaults(suiteName: SharedState.appGroupID)
         let modelPath = settings?.modelFolderPath ?? defaults?.string(forKey: "modelFolderPath")
         guard let modelPath else {
@@ -230,7 +239,7 @@ final class DictationSessionController {
         }
 
         do {
-            let rawText = try await transcriber.transcribe(audioURL: audioURL, modelPath: modelPath)
+            let rawText = try await transcriber.transcribe(samples: samples, modelPath: modelPath)
             let options = TranscriptCleanupOptions(
                 removeFillers: settings?.removeFillers ?? defaults?.object(forKey: "removeFillers") as? Bool ?? true,
                 autoPunctuate: settings?.autoPunctuate ?? defaults?.object(forKey: "autoPunctuate") as? Bool ?? true,
@@ -250,6 +259,7 @@ final class DictationSessionController {
             try store.save(cleaned)
             defaults?.set(cleaned, forKey: "pendingTranscription")
             defaults?.set(Date().timeIntervalSince1970, forKey: "pendingTranscriptionDate")
+            DictationSignalCenter.post(.transcriptReady)
             UIPasteboard.general.string = cleaned
             transcript = cleaned
             history = store.history

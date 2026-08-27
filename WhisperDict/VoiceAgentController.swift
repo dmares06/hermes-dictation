@@ -318,7 +318,7 @@ final class VoiceAgentController {
     }
 
     private func stopAndProcess(settings: SharedState, conversationID expectedConversationID: UUID) async {
-        guard let audioURL = recorder.stop() else {
+        guard let samples = recorder.stop() else {
             if isRecording { phase = .failed("The recording was empty. Please try again.") }
             return
         }
@@ -326,7 +326,6 @@ final class VoiceAgentController {
         elapsedTask = nil
         phase = .transcribing
 
-        defer { try? FileManager.default.removeItem(at: audioURL) }
         let modelPath = settings.modelFolderPath
         guard let modelPath else {
             phase = .failed("The speech model is missing. Prepare it again in Dictation.")
@@ -335,7 +334,7 @@ final class VoiceAgentController {
         }
 
         do {
-            let rawText = try await transcriber.transcribe(audioURL: audioURL, modelPath: modelPath)
+            let rawText = try await transcriber.transcribe(samples: samples, modelPath: modelPath)
             guard conversationActive, conversationID == expectedConversationID else { return }
             let collectsProse = session.step.collectsProse
             let options = TranscriptCleanupOptions(
@@ -444,9 +443,7 @@ final class VoiceAgentController {
     }
 
     private func discardCurrentRecording() {
-        if let audioURL = recorder.stop() {
-            try? FileManager.default.removeItem(at: audioURL)
-        }
+        _ = recorder.stop()
         elapsedTask?.cancel()
         elapsedTask = nil
         audioLevel = 0

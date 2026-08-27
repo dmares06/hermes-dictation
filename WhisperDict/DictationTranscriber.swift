@@ -8,11 +8,33 @@ actor DictationTranscriber {
 
         var errorDescription: String? {
             switch self {
-            case .modelMissing: "Prepare a Whisper model before recording."
+            case .modelMissing: "Prepare a speech model before recording."
             case .noSpeech: "No speech was detected. Try speaking closer to the microphone."
             }
         }
     }
+
+    /// Decoding tuned for dictation rather than for transcribing media.
+    ///
+    /// - `language` is pinned so no window is ever spent identifying it.
+    /// - `withoutTimestamps` drops the `<|0.00|>` markers Whisper otherwise
+    ///   emits around every segment. Nothing here uses them, and they are a
+    ///   large share of the tokens decoded for a short utterance.
+    /// - `temperatureFallbackCount` is the worst case, not the common one: a
+    ///   decode that trips the compression or log-prob threshold is retried
+    ///   at a higher temperature, and the stock five retries mean a noisy
+    ///   clip can cost six full decodes. One retry keeps the recovery and
+    ///   bounds the wait.
+    /// - `chunkingStrategy` only engages past 30 s of audio, where it splits
+    ///   on silence and decodes the pieces concurrently.
+    private static let dictationOptions = DecodingOptions(
+        language: "en",
+        temperatureFallbackCount: 1,
+        detectLanguage: false,
+        skipSpecialTokens: true,
+        withoutTimestamps: true,
+        chunkingStrategy: .vad
+    )
 
     private var whisperKit: WhisperKit?
     private var loadedModelPath: String?
@@ -20,22 +42,36 @@ actor DictationTranscriber {
 
     /// Loads the model ahead of the transcription that will need it.
     ///
-    /// Recording is the natural moment to call this: the load then overlaps
-    /// with however long the user speaks, instead of landing between them
-    /// finishing and seeing text. Failures are deliberately swallowed —
-    /// `transcribe(audioURL:modelPath:)` reports them with real context.
+    /// The best moment is whenever the app can tell a dictation is plausible
+    /// — the listening window opening, or the app coming forward — because
+    /// the load then costs nothing the user can perceive. Calling it again at
+    /// record time is harmless: an in-flight load is joined, not restarted.
+    /// Failures are deliberately swallowed; `transcribe` reports them with
+    /// real context.
     func prewarm(modelPath: String) async {
         guard FileManager.default.fileExists(atPath: modelPath) else { return }
         try? await ensureModel(at: modelPath)
     }
 
-    func transcribe(audioURL: URL, modelPath: String) async throws -> String {
+    /// - Parameter samples: 16 kHz mono audio, as captured.
+    func transcribe(samples: [Float], modelPath: String) async throws -> String {
         guard FileManager.default.fileExists(atPath: modelPath) else {
             throw TranscriberError.modelMissing
         }
         try await ensureModel(at: modelPath)
         guard let whisperKit else { throw TranscriberError.modelMissing }
-        let results = try await whisperKit.transcribe(audioPath: audioURL.path)
+
+        let startedAt = Date()
+        let results = try await whisperKit.transcribe(
+            audioArray: samples,
+            decodeOptions: Self.dictationOptions
+        )
+        DictationLatencyLog.record(
+            elapsed: Date().timeIntervalSince(startedAt),
+            audioSeconds: Double(samples.count) / 16_000,
+            timings: whisperKit.currentTimings
+        )
+
         let text = results.map(\.text).joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { throw TranscriberError.noSpeech }
@@ -44,10 +80,9 @@ actor DictationTranscriber {
 
     /// Ensures `whisperKit` holds the model at `modelPath`.
     ///
-    /// A prewarm started at record time is usually still running when the
-    /// transcription arrives, so an in-flight load is joined rather than
-    /// started again — loading this model twice would cost more than the
-    /// prewarm saves.
+    /// A prewarm is usually still running when the transcription arrives, so
+    /// an in-flight load is joined rather than started again — loading this
+    /// model twice would cost more than the prewarm saves.
     private func ensureModel(at modelPath: String) async throws {
         if whisperKit != nil, loadedModelPath == modelPath { return }
         if let loadTask, loadedModelPath == modelPath {
