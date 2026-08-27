@@ -8,9 +8,13 @@ agent actually do things (starting with email) after a confirmation.
 
 ### Phase 1 — Resident dictation (the Wispr Flow model)
 
-Apple forbids keyboards from using the microphone, so every dictation
-keyboard records in its *app*. The difference between "the app opens every
-time" and "you never leave Messages" is only whether the app is already awake.
+A keyboard extension with Full Access *can* use the microphone, but it cannot
+hold a Whisper model — extensions get a small memory budget. So there are two
+dictation paths, and they trade immediacy against accuracy: the keyboard's
+**Dictate** button records in the extension and streams Apple's on-device
+recognizer with no cold start, while Whisper-quality transcription records in
+the *app*. For that second path the only question is whether the app is
+already awake, which is what the listening window below is for.
 
 - After the first foreground use, a silent audio keepalive holds the process
   resident for a **listening window** (Settings → Background listening; 5 min

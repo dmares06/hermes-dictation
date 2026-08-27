@@ -6,6 +6,8 @@ struct KeyboardView: View {
     let onInsert: (String) -> Void
     let onDelete: () -> Void
     let onNextKeyboard: () -> Void
+    /// Starts or stops dictation inside the keyboard itself.
+    let onToggleDictation: () -> Void
     /// Replaces the word being typed with a tapped suggestion.
     let onApplySuggestion: (KeyboardSuggestion) -> Void
     /// The click and tap a key is expected to produce. Fired on touch down
@@ -19,6 +21,16 @@ struct KeyboardView: View {
         VStack(spacing: 7) {
             VStack(spacing: 4) {
                 HStack(spacing: 8) {
+                    // Primary, because it is the only path with no cold start:
+                    // the keyboard records here and text appears as you speak.
+                    Button(action: onToggleDictation) {
+                        dictateControlLabel
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(dictateButtonAccessibilityHint)
+
+                    // Secondary: hands off to the app for a Whisper pass, which
+                    // is more accurate but needs the app resident.
                     Button(action: onOpenRecorder) {
                         recordControlLabel
                     }
@@ -29,25 +41,17 @@ struct KeyboardView: View {
                         Button {
                             onInsert(state.latestTranscript)
                         } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "waveform.badge.mic")
-                                Text("Insert latest")
-                                    .fontWeight(.semibold)
-                                Text(state.latestTranscript)
-                                    .lineLimit(1)
-                                    .foregroundStyle(.secondary)
-                                Spacer(minLength: 0)
-                            }
-                            .font(.footnote)
-                            .padding(.horizontal, 12)
-                            .frame(maxWidth: .infinity, minHeight: 34)
-                            .background(recordButtonColor.opacity(0.16), in: RoundedRectangle(cornerRadius: 9))
+                            Image(systemName: "text.insert")
+                                .font(.footnote.weight(.semibold))
+                                .frame(minWidth: 38, minHeight: 34)
+                                .background(recordButtonColor.opacity(0.16), in: RoundedRectangle(cornerRadius: 9))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Insert latest transcript")
                         .accessibilityHint("Inserts the most recent transcript created in WhisperDict")
-                    } else {
-                        Spacer(minLength: 0)
                     }
+
+                    Spacer(minLength: 0)
                 }
 
                 // The strip and the dictation status share a row: only one of
@@ -113,12 +117,62 @@ struct KeyboardView: View {
     }
 
     private var recordControlLabel: some View {
-        Label(recordButtonTitle, systemImage: recordButtonIcon)
+        Group {
+            // "Action Button" is too wide to sit beside the primary control on
+            // a phone, and it is only guidance. The label earns its space when
+            // the handoff is actually doing something.
+            if recordButtonTitle == "Action Button" {
+                Image(systemName: recordButtonIcon)
+                    .frame(minWidth: 38)
+            } else {
+                Label(recordButtonTitle, systemImage: recordButtonIcon)
+                    .lineLimit(1)
+                    .padding(.horizontal, 12)
+            }
+        }
+        .font(.footnote.weight(.semibold))
+        .frame(minHeight: 34)
+        .foregroundStyle(recordButtonForeground)
+        .background(activeRecordButtonColor, in: RoundedRectangle(cornerRadius: 9))
+    }
+
+    private var isDictating: Bool {
+        state.dictationPhase == .listening || state.dictationPhase == .starting
+    }
+
+    private var dictateControlLabel: some View {
+        Label(dictateButtonTitle, systemImage: dictateButtonIcon)
             .font(.footnote.weight(.semibold))
             .padding(.horizontal, 12)
             .frame(minHeight: 34)
-            .foregroundStyle(recordButtonForeground)
-            .background(activeRecordButtonColor, in: RoundedRectangle(cornerRadius: 9))
+            .foregroundStyle(isDictating ? Color.white : recordButtonForeground)
+            .background(
+                isDictating ? Color.red : recordButtonColor,
+                in: RoundedRectangle(cornerRadius: 9)
+            )
+    }
+
+    private var dictateButtonTitle: String {
+        switch state.dictationPhase {
+        case .idle: "Dictate"
+        case .starting: "Starting…"
+        case .listening: "Stop"
+        case .finishing: "Finishing…"
+        }
+    }
+
+    private var dictateButtonIcon: String {
+        switch state.dictationPhase {
+        case .idle: "mic.fill"
+        case .starting, .finishing: "ellipsis"
+        case .listening: "stop.fill"
+        }
+    }
+
+    private var dictateButtonAccessibilityHint: String {
+        isDictating
+            ? "Stops dictation and keeps the text already inserted"
+            : "Dictates straight into this text field without leaving the app"
     }
 
     private var recordButtonIcon: String {

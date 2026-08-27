@@ -43,6 +43,9 @@ public enum ReminderParser {
         return ReminderDraft(title: title, dueDate: dueDate)
     }
 
+    /// - Note: `now` only picks between candidate matches. NSDataDetector has
+    ///   no reference-date parameter, so it resolves relative phrases like
+    ///   "tomorrow" against the system clock — `now` cannot move them.
     private static func extractDate(from text: inout String, now: Date) -> Date? {
         guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
         else { return nil }

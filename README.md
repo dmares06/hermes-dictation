@@ -187,7 +187,7 @@ Email uses the iPhone's default mail app, so set Gmail as the default mail app i
 
 The typed action model, approval rules, security boundaries, test plan, and future expansion path are documented in [`docs/VOICE_AGENT_PLAN.md`](docs/VOICE_AGENT_PLAN.md).
 
-> iOS restriction: Apple does not allow custom keyboard extensions to access the microphone, and current iOS versions can reject audio-session activation from a background Shortcut. The keyboard therefore shows Action Button guidance, while the physical Action Button, Siri, or Shortcuts opens WhisperDict and starts recording in the foreground. Third-party keyboards are unavailable in secure fields, phone-pad fields, and apps that disable custom keyboards.
+> iOS limits: with Allow Full Access a keyboard extension *may* use the microphone, which is what the keyboard's **Dictate** button does — Apple's on-device recognizer fits an extension's memory budget. A Whisper model does not, so the higher-accuracy path still records in the app, and current iOS versions can reject audio-session activation from a background Shortcut; the Action Button or the resident listening window covers that. Third-party keyboards remain unavailable in secure fields, phone-pad fields, and apps that disable custom keyboards.
 
 Build source without signing profiles:
 
