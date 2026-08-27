@@ -127,6 +127,7 @@ public enum VoiceAgentAction: Equatable, Sendable {
     /// Saves inside Hermes' own notes — no other app involved.
     case saveNote(String)
     case createReminder(ReminderDraft)
+    case createCalendarEvent(CalendarEventDraft)
     case composeMessage(String)
     case runShortcut(String)
 
@@ -134,6 +135,7 @@ public enum VoiceAgentAction: Equatable, Sendable {
         switch self {
         case .saveNote: "Save note"
         case .createReminder: "Add reminder"
+        case .createCalendarEvent: "Add calendar event"
         case .sendEmail: "Send with Gmail"
         case .open(.gmailWeb): "Open Gmail"
         case .open(.appSettings): "Open Settings"
@@ -199,6 +201,43 @@ public enum VoiceAgentAction: Equatable, Sendable {
     public static func validatedReminder(title: String, dueDate: Date?) -> VoiceAgentAction? {
         guard let title = boundedText(title, limit: ReminderDraft.maximumTitleLength) else { return nil }
         return .createReminder(ReminderDraft(title: title, dueDate: dueDate))
+    }
+
+    /// Builds a calendar event from what the model heard.
+    ///
+    /// An end time is optional: "put lunch in at noon" means an hour unless
+    /// the user says otherwise. An end that is missing, backwards, or absurdly
+    /// far out is a misheard date, so it falls back to the default duration
+    /// rather than writing a week-long lunch into the calendar.
+    public static func validatedCalendarEvent(
+        title: String,
+        start: Date,
+        end: Date?,
+        isAllDay: Bool = false,
+        location: String? = nil,
+        notes: String? = nil
+    ) -> VoiceAgentAction? {
+        guard let title = boundedText(title, limit: CalendarEventDraft.maximumTitleLength) else { return nil }
+        let location = location.flatMap { boundedText($0, limit: CalendarEventDraft.maximumLocationLength) }
+        let notes = notes.flatMap { boundedText($0, limit: CalendarEventDraft.maximumNotesLength) }
+
+        let fallbackEnd = start.addingTimeInterval(
+            isAllDay ? 60 * 60 * 24 : CalendarEventDraft.defaultDuration
+        )
+        var resolvedEnd = end ?? fallbackEnd
+        let duration = resolvedEnd.timeIntervalSince(start)
+        if duration <= 0 || duration > CalendarEventDraft.maximumDuration {
+            resolvedEnd = fallbackEnd
+        }
+
+        return .createCalendarEvent(CalendarEventDraft(
+            title: title,
+            start: start,
+            end: resolvedEnd,
+            isAllDay: isAllDay,
+            location: location,
+            notes: notes
+        ))
     }
 
     public static func validatedDestination(_ value: String) -> VoiceAgentAction? {
@@ -388,6 +427,8 @@ public struct VoiceAgentSession: Sendable {
             message = draft.dueDate == nil
                 ? "Adding the reminder."
                 : "Adding the reminder with an alert."
+        case .createCalendarEvent(let draft):
+            message = "Adding \(draft.summary()) to your calendar."
         case .composeMessage:
             message = "Opening a message draft. Choose the recipient, review it, and tap Send when you are ready."
         case .runShortcut(let name):

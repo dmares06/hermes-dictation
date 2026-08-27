@@ -18,7 +18,9 @@ Lets the app send email from your own Gmail account through the official API —
 3. In a browser, open `https://<deployment>.vercel.app/api/gmail-auth?token=<WHISPERDICT_CLIENT_TOKEN>` and approve. The callback page shows a refresh token once.
 4. Set `GMAIL_REFRESH_TOKEN` to that value and redeploy. `GET /api/health` now reports `"gmail": true`.
 
-The scope is `gmail.compose` (create drafts and send). The service never reads mail.
+The scopes are `gmail.compose` (create drafts and send) and `gmail.readonly`, which is what lets Hermes answer questions about mail you have received and gather context before drafting a reply. Reads return headers and Gmail's own snippet only — message bodies and attachments are never fetched.
+
+If you connected Gmail before the read scope existed, re-run steps 3 and 4: a refresh token issued for the old scopes cannot read, and `/api/gmail-list` answers `403 insufficient_scope` until you do.
 
 ## Endpoints
 
@@ -26,6 +28,7 @@ The scope is `gmail.compose` (create drafts and send). The service never reads m
 - `POST /api/realtime-session`: accepts an authenticated `application/sdp` WebRTC offer and returns OpenAI's SDP answer
 - `POST /api/realtime-token`: returns an authenticated short-lived client secret for native WebRTC
 - `POST /api/gmail-send`: authenticated JSON `{to, subject, body, mode: "send" | "draft"}`; sends or drafts through the connected Gmail account
+- `POST /api/gmail-list`: authenticated JSON `{query, limit}`; returns `{ok, messages: [{id, from, subject, date, snippet}]}` for a Gmail search (empty query means the past week's inbox)
 - `GET /api/gmail-auth?token=…` and `GET /api/gmail-callback`: one-time OAuth setup (see above)
 
 The Realtime session uses `gpt-realtime-2.1`, the `marin` voice, low-eagerness semantic voice activity detection, and an allowlist of reviewable iPhone actions.

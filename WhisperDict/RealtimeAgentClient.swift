@@ -227,9 +227,10 @@ final class RealtimeAgentClient: NSObject {
             guard !Task.isCancelled, let self, self.reconnectTask != nil else { return }
             self.reconnectTask = nil
             switch self.peerConnection?.iceConnectionState {
-            case .connected, .completed:
+            case .some(.connected), .some(.completed):
                 self.onStateChange?(.listening)
             case .none:
+                // Already torn down; nothing left to report.
                 return
             default:
                 self.onStateChange?(.failed("The live connection dropped and did not come back."))
@@ -383,8 +384,31 @@ final class RealtimeAgentClient: NSObject {
     /// Tools that only read. They carry no side effect to confirm, so making
     /// the user approve them would turn "what's the weather" into a dialog.
     static let informationTools: Set<String> = [
-        "search_web", "search_notes", "list_reminders", "get_datetime",
+        "search_web", "search_notes", "list_reminders", "list_calendar_events",
+        "search_email", "get_datetime",
     ]
+
+    /// Accepts both an offset timestamp and a plain local one: the model is
+    /// told to send an offset, but a dropped "-04:00" should not silently
+    /// lose the whole event.
+    private static func timestamp(_ value: String) -> Date? {
+        let withOffset = ISO8601DateFormatter()
+        withOffset.formatOptions = [.withInternetDateTime]
+        if let date = withOffset.date(from: value) { return date }
+
+        let withFractional = ISO8601DateFormatter()
+        withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = withFractional.date(from: value) { return date }
+
+        let local = DateFormatter()
+        local.locale = Locale(identifier: "en_US_POSIX")
+        local.timeZone = .current
+        for format in ["yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm"] {
+            local.dateFormat = format
+            if let date = local.date(from: value) { return date }
+        }
+        return nil
+    }
 
     private func preparedAction(name: String, arguments: [String: Any]) -> VoiceAgentAction? {
         switch name {
@@ -409,9 +433,21 @@ final class RealtimeAgentClient: NSObject {
         case "save_note":
             guard let body = arguments["body"] as? String else { return nil }
             return VoiceAgentAction.validatedSavedNote(body)
+        case "create_calendar_event":
+            guard let title = arguments["title"] as? String,
+                  let start = (arguments["start"] as? String).flatMap(Self.timestamp)
+            else { return nil }
+            return VoiceAgentAction.validatedCalendarEvent(
+                title: title,
+                start: start,
+                end: (arguments["end"] as? String).flatMap(Self.timestamp),
+                isAllDay: arguments["all_day"] as? Bool ?? false,
+                location: arguments["location"] as? String,
+                notes: arguments["notes"] as? String
+            )
         case "create_reminder":
             guard let title = arguments["title"] as? String else { return nil }
-            let due = (arguments["due"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) }
+            let due = (arguments["due"] as? String).flatMap(Self.timestamp)
             return VoiceAgentAction.validatedReminder(title: title, dueDate: due)
         case "open_destination":
             guard let destination = arguments["destination"] as? String else { return nil }

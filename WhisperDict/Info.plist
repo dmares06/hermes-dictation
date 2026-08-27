@@ -31,6 +31,8 @@
 	<string>WhisperDict uses the microphone to convert your speech to text on this device.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>WhisperDict uses on-device speech recognition so the keyboard can dictate directly into other apps.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>WhisperDict reads your upcoming events and adds the ones you approve, so Hermes can answer questions about your schedule and put things on it.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>WhisperDict adds the reminders you dictate to the Reminders app so they can alert you.</string>
 	<key>NSSupportsLiveActivities</key>

@@ -76,6 +76,8 @@ final class VoiceAgentController {
         didSet { session.emailDelivery = emailDelivery }
     }
     @ObservationIgnored private let backend = HermesBackendClient()
+    /// Writes and reads the system calendar for the calendar tools.
+    @ObservationIgnored private let calendar = CalendarService()
 
     private let recorder: DictationAudioRecorder
     private let transcriber: DictationTranscriber
@@ -513,6 +515,46 @@ final class VoiceAgentController {
                 .map { "\($0.title): \($0.body.prefix(200))" }
                 .joined(separator: " | ")
 
+        case "list_calendar_events":
+            guard await calendar.requestAccess() else {
+                return "Calendar access is off. The user has to enable it for WhisperDict in Settings."
+            }
+            // JSONSerialization hands back an NSNumber whatever the model sent.
+            let days = (arguments["days"] as? NSNumber)?.intValue ?? 7
+            let events = await calendar.upcoming(days: days)
+            guard !events.isEmpty else {
+                return "There is nothing on the calendar in the next \(days) day\(days == 1 ? "" : "s")."
+            }
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE d MMMM 'at' h:mm a"
+            return events
+                .map { event in
+                    let when = event.isAllDay
+                        ? "all day \(event.start.formatted(date: .abbreviated, time: .omitted))"
+                        : formatter.string(from: event.start)
+                    guard let location = event.location, !location.isEmpty else {
+                        return "\(event.title), \(when)"
+                    }
+                    return "\(event.title), \(when), at \(location)"
+                }
+                .joined(separator: " | ")
+
+        case "search_email":
+            let query = (arguments["query"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            do {
+                let result = try await backend.recentEmail(query: query)
+                guard !result.messages.isEmpty else {
+                    return query.isEmpty ? "The inbox has nothing recent." : "No email matches \"\(query)\"."
+                }
+                return result.messages
+                    .map { message in
+                        "From \(message.from), \(message.date): \(message.subject). \(message.snippet)"
+                    }
+                    .joined(separator: " | ")
+            } catch {
+                return "The mailbox lookup failed: \(error.localizedDescription)"
+            }
+
         case "list_reminders":
             guard let notes else { return "Reminders are not available right now." }
             await notes.refreshReminders()
@@ -561,6 +603,13 @@ final class VoiceAgentController {
                 return
             }
             await announce(draft.dueDate == nil ? "Reminder added." : "Reminder added with an alert.")
+        case .createCalendarEvent(let draft):
+            do {
+                _ = try await calendar.create(draft)
+                await announce("Added \(draft.summary()) to your calendar.")
+            } catch {
+                await reportHandoffFailure(error.localizedDescription)
+            }
         case .composeMessage(let text):
             messagePayload = MessageComposePayload(
                 body: text,

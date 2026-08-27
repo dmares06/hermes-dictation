@@ -403,6 +403,16 @@ private struct PendingActionCard: View {
         case .createReminder(let draft):
             detail("Reminder", draft.title)
             detail("When", draft.dueDate?.formatted(date: .abbreviated, time: .shortened) ?? "No time")
+        case .createCalendarEvent(let draft):
+            detail("Event", draft.title)
+            detail(
+                "When",
+                draft.isAllDay
+                    ? "All day \(draft.start.formatted(date: .abbreviated, time: .omitted))"
+                    : "\(draft.start.formatted(date: .abbreviated, time: .shortened)) – \(draft.end.formatted(date: .omitted, time: .shortened))"
+            )
+            if let location = draft.location { detail("Where", location) }
+            if let notes = draft.notes { detail("Notes", notes) }
         case .composeMessage(let text):
             detail("Message", text)
         case .open(.gmailWeb):
@@ -438,6 +448,7 @@ private struct PendingActionCard: View {
         case .shareNote: "Share note"
         case .saveNote: "Save note"
         case .createReminder: "Add reminder"
+        case .createCalendarEvent: "Add to calendar"
         case .composeMessage: "Open message draft"
         case .open(.gmailWeb): "Open Gmail"
         case .open(.appSettings): "Open Settings"

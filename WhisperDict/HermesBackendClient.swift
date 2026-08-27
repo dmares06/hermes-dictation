@@ -36,10 +36,12 @@ struct HermesBackendClient {
                 case "unauthorized": "The backend rejected this app's token."
                 case "invalid_recipient": "That email address doesn't look right."
                 case "send_failed", "draft_failed": "Gmail refused the message."
-                case "search_failed": "The web search didn't come back."
+                case "search_failed": "The search didn't come back."
                 case "invalid_query", "query_too_long": "That search request wasn't valid."
+                case "insufficient_scope":
+                    "Gmail is connected for sending only. Reconnect it on the backend to grant read access."
                 case "token_refresh_failed": "The Gmail connection expired; reconnect it on the backend."
-                default: "The backend couldn't send the email (\(code))."
+                default: "The backend couldn't complete that request (\(code))."
                 }
             case .invalidResponse:
                 "The backend returned something unexpected."
@@ -91,6 +93,46 @@ struct HermesBackendClient {
             throw ClientError.rejected(code: code, status: http.statusCode)
         }
         guard let result = try? JSONDecoder().decode(SearchResult.self, from: data), result.ok else {
+            throw ClientError.invalidResponse
+        }
+        return result
+    }
+
+    struct MailboxResult: Decodable {
+        struct Message: Decodable {
+            let id: String
+            let from: String
+            let subject: String
+            let date: String
+            let snippet: String
+        }
+        let ok: Bool
+        let messages: [Message]
+    }
+
+    /// Reads recent mail through the backend, which holds the Gmail
+    /// credentials. Headers and snippets only — message bodies stay at Google.
+    func recentEmail(query: String, limit: Int = 5) async throws -> MailboxResult {
+        let token = try clientToken()
+        var request = URLRequest(url: Self.baseURL.appendingPathComponent("api/gmail-list"))
+        request.httpMethod = "POST"
+        // Two Gmail round trips per message; long enough for five, short
+        // enough that the conversation does not stall in silence.
+        request.timeoutInterval = 25
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "query": query,
+            "limit": limit,
+        ])
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw ClientError.invalidResponse }
+        guard http.statusCode == 200 else {
+            let code = (try? JSONDecoder().decode([String: String].self, from: data))?["error"] ?? "http_\(http.statusCode)"
+            throw ClientError.rejected(code: code, status: http.statusCode)
+        }
+        guard let result = try? JSONDecoder().decode(MailboxResult.self, from: data), result.ok else {
             throw ClientError.invalidResponse
         }
         return result

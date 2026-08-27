@@ -46,11 +46,14 @@ test("configuration requires all three Google values", () => {
   assert.equal(gmailConfigured({ ...env, GMAIL_REFRESH_TOKEN: "" }), false);
 });
 
-test("authorization URL asks for offline access with the compose scope and a bound state", () => {
+test("authorization URL asks for offline access with the compose and read scopes and a bound state", () => {
   const url = new URL(authorizationURL({ clientId: "id", redirectUri: "https://x/cb", state: oauthState("t") }));
   assert.equal(url.searchParams.get("access_type"), "offline");
   assert.equal(url.searchParams.get("prompt"), "consent");
-  assert.equal(url.searchParams.get("scope"), "https://www.googleapis.com/auth/gmail.compose");
+  assert.equal(
+    url.searchParams.get("scope"),
+    "https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.readonly",
+  );
   assert.equal(url.searchParams.get("state"), oauthState("t"));
   assert.equal(oauthState("t").length, 64);
 });

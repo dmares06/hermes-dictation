@@ -181,7 +181,10 @@ The **Agent** tab supports these on-device conversations:
 
 - “Compose an email” → speak one recipient, a subject, and the body → review the exact draft → say **confirm** or tap **Open email draft**
 - “Create a note” → speak the note → review it → say **confirm** or tap **Share note**, then choose Notes
+- “Put lunch with Sam in my calendar on Thursday at noon” → review the event → say **confirm** or tap **Add to calendar**
 - “Open Gmail” or “Open Settings” → review the destination → confirm before leaving Hermes
+
+Hermes can also read, without asking each time, because nothing is changed by a read: your upcoming calendar events, your reminders, your saved notes, the web, and — when the backend's Gmail connection includes the read scope — the sender, subject, date, and snippet of recent mail. Calendar events go into the system calendar through EventKit, so they land in whatever accounts your iPhone already syncs and appear in Calendar, on the Lock Screen, and in Siri. iOS asks for calendar access the first time Hermes needs it.
 
 Email uses the iPhone's default mail app, so set Gmail as the default mail app if you want drafts to open there. Hermes never presses Send or saves a note itself. iOS does not let third-party apps inspect or control another app's interface; the conversation stays in Hermes until a standard system handoff opens, and listening ends before that handoff.
 

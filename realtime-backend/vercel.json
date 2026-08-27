@@ -6,6 +6,9 @@
     },
     "api/gmail-send.mjs": {
       "maxDuration": 30
+    },
+    "api/gmail-list.mjs": {
+      "maxDuration": 30
     }
   },
   "headers": [

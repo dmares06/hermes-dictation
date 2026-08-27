@@ -36,8 +36,16 @@ const REVIEWED_TOOLS = [
   "create_reminder",
   "open_destination",
   "run_shortcut",
+  "create_calendar_event",
 ];
-const READ_ONLY_TOOLS = ["search_web", "search_notes", "list_reminders", "get_datetime"];
+const READ_ONLY_TOOLS = [
+  "search_web",
+  "search_notes",
+  "list_reminders",
+  "list_calendar_events",
+  "search_email",
+  "get_datetime",
+];
 
 test("session exposes only the allowlisted actions", () => {
   assert.deepEqual(

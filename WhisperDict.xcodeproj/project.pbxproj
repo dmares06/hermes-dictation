@@ -47,6 +47,8 @@
 		D50000000000000000000001 /* NotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000011 /* NotesView.swift */; };
 		D40000000000000000000001 /* NotesController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000000000000000000011 /* NotesController.swift */; };
 		D30000000000000000000001 /* ReminderService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000011 /* ReminderService.swift */; };
+		D70000000000000000000001 /* CalendarEventDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70000000000000000000011 /* CalendarEventDraft.swift */; };
+		D80000000000000000000001 /* CalendarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D80000000000000000000011 /* CalendarService.swift */; };
 		D20000000000000000000001 /* ReminderDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000011 /* ReminderDraft.swift */; };
 		D10000000000000000000001 /* NoteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000011 /* NoteStore.swift */; };
 		C50000000000000000000001 /* ListeningWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000011 /* ListeningWindowController.swift */; };
@@ -141,6 +143,8 @@
 		D50000000000000000000011 /* NotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesView.swift; sourceTree = "<group>"; };
 		D40000000000000000000011 /* NotesController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesController.swift; sourceTree = "<group>"; };
 		D30000000000000000000011 /* ReminderService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderService.swift; sourceTree = "<group>"; };
+		D70000000000000000000011 /* CalendarEventDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarEventDraft.swift; sourceTree = "<group>"; };
+		D80000000000000000000011 /* CalendarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarService.swift; sourceTree = "<group>"; };
 		C50000000000000000000011 /* ListeningWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningWindowController.swift; sourceTree = "<group>"; };
 		C40000000000000000000011 /* DictationActivityHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationActivityHost.swift; sourceTree = "<group>"; };
 		C30000000000000000000011 /* ResidentAudioKeepalive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResidentAudioKeepalive.swift; sourceTree = "<group>"; };
@@ -206,6 +210,7 @@
 				D50000000000000000000011 /* NotesView.swift */,
 				D40000000000000000000011 /* NotesController.swift */,
 				D30000000000000000000011 /* ReminderService.swift */,
+				D80000000000000000000011 /* CalendarService.swift */,
 				C50000000000000000000011 /* ListeningWindowController.swift */,
 				C40000000000000000000011 /* DictationActivityHost.swift */,
 				C30000000000000000000011 /* ResidentAudioKeepalive.swift */,
@@ -252,6 +257,7 @@
 				A10000000000000000000055 /* KeyboardLayout.swift */,
 				B50000000000000000000011 /* KeyboardTextProcessor.swift */,
 				D20000000000000000000011 /* ReminderDraft.swift */,
+				D70000000000000000000011 /* CalendarEventDraft.swift */,
 				D10000000000000000000011 /* NoteStore.swift */,
 				C20000000000000000000011 /* DictationSignal.swift */,
 				C10000000000000000000011 /* ListeningWindow.swift */,
@@ -451,7 +457,9 @@
 				D50000000000000000000001 /* NotesView.swift in Sources */,
 				D40000000000000000000001 /* NotesController.swift in Sources */,
 				D30000000000000000000001 /* ReminderService.swift in Sources */,
+				D80000000000000000000001 /* CalendarService.swift in Sources */,
 				D20000000000000000000001 /* ReminderDraft.swift in Sources */,
+				D70000000000000000000001 /* CalendarEventDraft.swift in Sources */,
 				D10000000000000000000001 /* NoteStore.swift in Sources */,
 				C50000000000000000000001 /* ListeningWindowController.swift in Sources */,
 				C40000000000000000000001 /* DictationActivityHost.swift in Sources */,
