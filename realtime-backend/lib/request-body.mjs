@@ -21,7 +21,10 @@ function validate(value, maximumBytes) {
   if (Buffer.byteLength(value, "utf8") > maximumBytes) throw new SDPBodyError("too_large");
   const trimmed = value.trim();
   if (!trimmed || !trimmed.startsWith("v=0")) throw new SDPBodyError("invalid");
-  return trimmed;
+  // SDP is a line protocol and its parser only consumes a line once that line
+  // is terminated. Trimming strips the offer's final CRLF, which makes a
+  // perfectly valid offer fail upstream as "failed to unmarshal SDP: EOF".
+  return `${trimmed}\r\n`;
 }
 
 export class SDPBodyError extends Error {

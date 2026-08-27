@@ -55,7 +55,11 @@ test("session exposes only the allowlisted review actions", () => {
 });
 
 test("SDP parser accepts an offer and rejects invalid or oversized input", async () => {
-  assert.equal(await readSDPBody({ body: "v=0\r\no=- example" }), "v=0\r\no=- example");
+  // The trailing CRLF has to survive: without it the upstream SDP parser
+  // reports EOF on the last line and rejects the whole offer.
+  assert.equal(await readSDPBody({ body: "v=0\r\no=- example" }), "v=0\r\no=- example\r\n");
+  assert.equal(await readSDPBody({ body: "v=0\r\no=- example\r\n" }), "v=0\r\no=- example\r\n");
+  assert.equal(await readSDPBody({ body: "  v=0\r\no=- example\r\n\r\n  " }), "v=0\r\no=- example\r\n");
   await assert.rejects(() => readSDPBody({ body: "not an offer" }), SDPBodyError);
   await assert.rejects(() => readSDPBody({ body: `v=0${"x".repeat(20)}` }, 10), SDPBodyError);
 });

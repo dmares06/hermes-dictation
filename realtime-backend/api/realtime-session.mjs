@@ -49,7 +49,18 @@ export default async function handler(request, response) {
     });
     const body = await upstream.text();
     if (!upstream.ok) {
-      console.error("OpenAI Realtime session failed", upstream.status, body.slice(0, 500));
+      // Shape, not content: an SDP carries ephemeral ICE credentials, but its
+      // length and whether it ended up with candidates is what distinguishes a
+      // truncated offer from a rejected one.
+      console.error(
+        "OpenAI Realtime session failed",
+        upstream.status,
+        `sdpBytes=${Buffer.byteLength(sdp, "utf8")}`,
+        `sdpLines=${sdp.split("\n").length}`,
+        `candidates=${(sdp.match(/^a=candidate:/gm) ?? []).length}`,
+        `endsWithCRLF=${sdp.endsWith("\r\n")}`,
+        body.slice(0, 500),
+      );
       // Pass the upstream reason through so the app can tell the user what to
       // do (e.g. a rejected offer) instead of a bare 502. No secrets are in
       // OpenAI's error envelope.

@@ -208,13 +208,33 @@ final class KeyboardViewController: UIInputViewController {
             recognizerAvailable: speech.isRecognizerAvailable
         ) {
             keyboardState.handoffStatus = blocker.message
+            note("blocked", detail: String(describing: blocker))
             return
         }
 
         liveWriter = LiveTranscriptWriter()
         keyboardState.dictationPhase = .starting
         keyboardState.handoffStatus = "Starting…"
+        note("requested")
         speech.start()
+    }
+
+    /// Records what in-keyboard dictation just did, into the app group.
+    ///
+    /// A keyboard extension's logs cannot be streamed from a Mac, so without
+    /// this a failure on device is invisible: the only evidence is a button
+    /// that did nothing. `./ios_run.sh --keyboard` reads it back.
+    private func note(_ outcome: String, detail: String? = nil) {
+        var record: [String: Any] = [
+            "at": Date().timeIntervalSince1970,
+            "outcome": outcome,
+            "hasFullAccess": hasFullAccess,
+            "recognizerAvailable": speech.isRecognizerAvailable,
+        ]
+        record["microphone"] = KeyboardSpeechRecognizer.microphoneAuthorized.map(String.init(describing:)) ?? "undetermined"
+        record["speech"] = KeyboardSpeechRecognizer.speechAuthorized.map(String.init(describing:)) ?? "undetermined"
+        if let detail { record["detail"] = detail }
+        BackgroundDictationState.sharedDefaults?.set(record, forKey: "lastKeyboardDictation")
     }
 
     private func wireSpeechEvents() {
@@ -224,6 +244,7 @@ final class KeyboardViewController: UIInputViewController {
             case .started:
                 self.keyboardState.dictationPhase = .listening
                 self.keyboardState.handoffStatus = "Listening — speak, then tap Stop"
+                self.note("listening")
             case .partial(let text):
                 self.applyLive(text)
             case .finished(let text):
@@ -231,6 +252,7 @@ final class KeyboardViewController: UIInputViewController {
                 self.finishDictation()
             case .failed(let message):
                 self.keyboardState.handoffStatus = message
+                self.note("failed", detail: message)
                 self.endDictation()
             }
         }
@@ -260,6 +282,7 @@ final class KeyboardViewController: UIInputViewController {
             textDocumentProxy.insertText(edit.insertText)
         }
         let dictated = liveWriter.insertedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        note("finished", detail: "\(dictated.count) characters")
         if !dictated.isEmpty {
             // Dictation done here should show up in history like any other.
             try? transcriptStore.save(dictated)

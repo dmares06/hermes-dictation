@@ -8,6 +8,7 @@
 #   ./ios_run.sh --no-launch          # build + install only
 #   ./ios_run.sh --build-only         # build only
 #   ./ios_run.sh --latency            # report the last dictation's timings
+#   ./ios_run.sh --keyboard           # report the keyboard's last dictation attempt
 #
 # Note: devicectl prints "Failed to load provisioning parameter list ...
 # No provider was found." on every invocation. It is harmless noise, not a
@@ -25,6 +26,7 @@ DEVICE_ID="${DEVICE_ID:-}"
 DO_INSTALL=1
 DO_LAUNCH=1
 SHOW_LATENCY=0
+SHOW_KEYBOARD=0
 APP_GROUP="group.com.dmares06.whisperdict"
 
 while [ $# -gt 0 ]; do
@@ -34,7 +36,8 @@ while [ $# -gt 0 ]; do
         --no-launch) DO_LAUNCH=0; shift ;;
         --build-only) DO_LAUNCH=0; DO_INSTALL=0; shift ;;
         --latency) SHOW_LATENCY=1; shift ;;
-        -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+        --keyboard) SHOW_KEYBOARD=1; shift ;;
+        -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -89,6 +92,46 @@ echo "📱 Target: ${DEVICE_NAME} (${DEVICE_ID})"
 # Where the last transcription's time actually went. The app writes the
 # breakdown into the app group after every dictation; without pulling it back,
 # any latency claim is guesswork.
+# A keyboard extension's logs cannot be streamed from a Mac, so the keyboard
+# records what its microphone attempt did into the app group instead.
+if [ "$SHOW_KEYBOARD" -eq 1 ]; then
+    KBD_DIR="$(mktemp -d -t whisperdict-keyboard)"
+    if ! xcrun devicectl device copy from \
+        --device "$DEVICE_ID" \
+        --domain-type appGroupDataContainer \
+        --domain-identifier "$APP_GROUP" \
+        --source "Library/Preferences/${APP_GROUP}.plist" \
+        --destination "${KBD_DIR}/${APP_GROUP}.plist" >/dev/null 2>&1; then
+        echo "❌ Could not read the app group. Unlock the phone first." >&2
+        rm -rf "$KBD_DIR"
+        exit 1
+    fi
+    python3 - "${KBD_DIR}/${APP_GROUP}.plist" << 'KEYBOARD_PY'
+import datetime, plistlib, sys
+
+with open(sys.argv[1], "rb") as handle:
+    record = plistlib.load(handle).get("lastKeyboardDictation")
+
+if not record:
+    print("The keyboard has not tried to dictate on this build yet.")
+    raise SystemExit(0)
+
+at = datetime.datetime.fromtimestamp(record["at"]).strftime("%H:%M:%S")
+print(f"Keyboard dictation at {at}: {record['outcome']}")
+if record.get("detail"):
+    print(f"  detail            {record['detail']}")
+for label, key in (
+    ("full access", "hasFullAccess"),
+    ("microphone", "microphone"),
+    ("speech", "speech"),
+    ("recognizer ready", "recognizerAvailable"),
+):
+    print(f"  {label:<17} {record.get(key)}")
+KEYBOARD_PY
+    rm -rf "$KBD_DIR"
+    exit 0
+fi
+
 if [ "$SHOW_LATENCY" -eq 1 ]; then
     LATENCY_DIR="$(mktemp -d -t whisperdict-latency)"
     if ! xcrun devicectl device copy from \
