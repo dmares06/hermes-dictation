@@ -2,6 +2,10 @@ import Observation
 import SwiftUI
 import UIKit
 
+extension KeyboardViewController: UIInputViewAudioFeedback {
+    var enableInputClicksWhenVisible: Bool { true }
+}
+
 final class KeyboardViewController: UIInputViewController {
     private var hostingController: UIHostingController<KeyboardView>?
     private let keyboardState = KeyboardState()
@@ -10,6 +14,10 @@ final class KeyboardViewController: UIInputViewController {
     private var sessionTimer: Timer?
     private var transcriptObservation: DictationSignalObservation?
     private var insertionGate = KeyboardTranscriptInsertionGate(currentRevision: 0)
+    // Built once: constructing a UITextChecker loads a dictionary, which is
+    // far too slow to do per keystroke.
+    private let wordChecker = SystemWordChecker()
+    private let keyFeedback = UIImpactFeedbackGenerator(style: .light)
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -17,8 +25,10 @@ final class KeyboardViewController: UIInputViewController {
             state: keyboardState,
             onOpenRecorder: { [weak self] in self?.openRecorder() },
             onInsert: { [weak self] text in self?.insertText(text) },
-            onDelete: { [weak self] in self?.textDocumentProxy.deleteBackward() },
-            onNextKeyboard: { [weak self] in self?.advanceToNextInputMode() }
+            onDelete: { [weak self] in self?.deleteBackward() },
+            onNextKeyboard: { [weak self] in self?.advanceToNextInputMode() },
+            onApplySuggestion: { [weak self] suggestion in self?.apply(suggestion) },
+            onKeyFeedback: { [weak self] in self?.playKeyFeedback() }
         )
         let hosting = UIHostingController(rootView: keyboard)
         hosting.view.backgroundColor = .clear
@@ -36,6 +46,9 @@ final class KeyboardViewController: UIInputViewController {
         let currentRevision = BackgroundDictationState.sharedDefaults?
             .double(forKey: BackgroundDictationState.Keys.transcriptRevision) ?? 0
         insertionGate = KeyboardTranscriptInsertionGate(currentRevision: currentRevision)
+        // Warming the generator here means the first keystroke taps as
+        // promptly as the hundredth.
+        keyFeedback.prepare()
         refreshSharedTranscript()
     }
 
@@ -55,6 +68,13 @@ final class KeyboardViewController: UIInputViewController {
         sessionTimer?.invalidate()
         sessionTimer = nil
         transcriptObservation = nil
+    }
+
+    override func textDidChange(_ textInput: UITextInput?) {
+        super.textDidChange(textInput)
+        // Covers the cursor moving, another keyboard typing, or the field
+        // being cleared — none of which route through insertText.
+        refreshSuggestions()
     }
 
     private func refreshSharedTranscript() {
@@ -103,15 +123,62 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func insertText(_ text: String) {
-        let edit = KeyboardTextProcessor.edit(
-            for: text,
-            contextBeforeInput: textDocumentProxy.documentContextBeforeInput
-        )
+        let context = textDocumentProxy.documentContextBeforeInput
+
+        // A terminator is the moment a word is finished, and so the only
+        // moment a correction can be applied without fighting the typist.
+        if KeyboardAutocorrect.isWordTerminator(text) {
+            let word = KeyboardAutocorrect.currentWord(before: context)
+            if let correction = KeyboardAutocorrect.autocorrection(for: word, checker: wordChecker) {
+                perform(KeyboardAutocorrect.replacement(of: word, with: correction, followedBy: text))
+                refreshSuggestions()
+                return
+            }
+        }
+
+        perform(KeyboardTextProcessor.edit(for: text, contextBeforeInput: context))
+        refreshSuggestions()
+    }
+
+    /// Swaps the word being typed for a tapped suggestion. Tapping the
+    /// literal is how a correction is refused, so it must clear the strip
+    /// rather than re-offer the same choice.
+    private func apply(_ suggestion: KeyboardSuggestion) {
+        playKeyFeedback()
+        let word = KeyboardAutocorrect.currentWord(before: textDocumentProxy.documentContextBeforeInput)
+        guard !word.isEmpty else { return }
+        if !suggestion.isLiteral {
+            perform(KeyboardAutocorrect.replacement(of: word, with: suggestion.text))
+        }
+        keyboardState.suggestions = []
+    }
+
+    private func deleteBackward() {
+        textDocumentProxy.deleteBackward()
+        refreshSuggestions()
+    }
+
+    private func perform(_ edit: KeyboardTextEdit) {
         for _ in 0..<edit.deleteBackwardCount {
             textDocumentProxy.deleteBackward()
         }
         guard !edit.insertedText.isEmpty else { return }
         textDocumentProxy.insertText(edit.insertedText)
+    }
+
+    private func refreshSuggestions() {
+        let word = KeyboardAutocorrect.currentWord(before: textDocumentProxy.documentContextBeforeInput)
+        keyboardState.suggestions = KeyboardAutocorrect.suggestions(for: word, checker: wordChecker)
+    }
+
+    /// The click and tap the system keyboard gives, which is most of why one
+    /// feels responsive. `playInputClick` respects the user's keyboard-sound
+    /// setting on its own; the haptic needs Full Access and is silently
+    /// ignored without it.
+    private func playKeyFeedback() {
+        UIDevice.current.playInputClick()
+        keyFeedback.impactOccurred(intensity: 0.6)
+        keyFeedback.prepare()
     }
 
     private func refreshBackgroundSession() {
@@ -164,4 +231,5 @@ final class KeyboardState {
     var handoffStatus: String?
     var backgroundPhase: BackgroundDictationPhase = .idle
     var isListening = false
+    var suggestions: [KeyboardSuggestion] = []
 }

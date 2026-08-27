@@ -6,6 +6,11 @@ struct KeyboardView: View {
     let onInsert: (String) -> Void
     let onDelete: () -> Void
     let onNextKeyboard: () -> Void
+    /// Replaces the word being typed with a tapped suggestion.
+    let onApplySuggestion: (KeyboardSuggestion) -> Void
+    /// The click and tap a key is expected to produce. Fired on touch down
+    /// with the keystroke, never after it.
+    let onKeyFeedback: () -> Void
 
     @State private var mode: KeyboardMode = .letters
     @State private var isShifted = false
@@ -45,11 +50,21 @@ struct KeyboardView: View {
                     }
                 }
 
-                Text(state.handoffStatus ?? defaultHandoffStatus)
+                // The strip and the dictation status share a row: only one of
+                // them is ever relevant, and vertical space above the keys is
+                // the scarcest thing in a keyboard.
+                if state.suggestions.isEmpty {
+                    Text(state.handoffStatus ?? defaultHandoffStatus)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    SuggestionStrip(
+                        suggestions: state.suggestions,
+                        onApply: onApplySuggestion
+                    )
+                }
             }
 
             ForEach(Array(layout.rows.enumerated()), id: \.offset) { _, row in
@@ -60,7 +75,8 @@ struct KeyboardView: View {
                             shifted: isShifted,
                             numericMode: mode == .numbers,
                             showsNextKeyboard: state.showsNextKeyboard,
-                            action: { handle(key) }
+                            action: { handle(key) },
+                            onPressFeedback: onKeyFeedback
                         )
                     }
                 }
@@ -170,26 +186,66 @@ private struct KeyButton: View {
     let numericMode: Bool
     let showsNextKeyboard: Bool
     let action: () -> Void
+    let onPressFeedback: () -> Void
     @State private var repeatTask: Task<Void, Never>?
+    @State private var isPressed = false
 
     var body: some View {
-        Group {
-            if key == .delete {
-                keyCap
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { _ in startRepeatingDelete() }
-                            .onEnded { _ in stopRepeatingDelete() }
-                    )
-            } else {
-                Button(action: action) { keyCap }
-                    .buttonStyle(KeyPopupButtonStyle(popupText: popupText))
-            }
+        keyCap
+            // The hit area is the whole cell including the gap around the cap,
+            // so a finger landing between two keys still lands on one of them.
+            .contentShape(Rectangle())
+            .overlay(alignment: .top) { popup }
+            .zIndex(isPressed ? 1 : 0)
+            .gesture(
+                // A key must fire the instant the finger lands, not on lift:
+                // firing on touch-up is what makes fast typing feel like it
+                // drops characters, because a quick tap that slides a little
+                // never completes as a tap at all. A drag with no minimum
+                // distance is the only SwiftUI gesture that reports touch
+                // down, and latching on `isPressed` keeps the continuous
+                // stream of drag updates from repeating the keystroke.
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in press() }
+                    .onEnded { _ in release() }
+            )
+            .opacity(key == .globe && !showsNextKeyboard ? 0.45 : 1)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityAddTraits(.isButton)
+            // VoiceOver drives the key through this, not the drag gesture.
+            .accessibilityAction { action() }
+            .onDisappear(perform: release)
+    }
+
+    @ViewBuilder
+    private var popup: some View {
+        if isPressed, let popupText {
+            Text(popupText)
+                .font(.title2.weight(.medium))
+                .foregroundStyle(.primary)
+                .frame(width: 54, height: 58)
+                .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 9))
+                .shadow(color: .black.opacity(0.28), radius: 2, y: 1)
+                .offset(y: -48)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
-        .opacity(key == .globe && !showsNextKeyboard ? 0.45 : 1)
-        .accessibilityLabel(accessibilityLabel)
-        .onDisappear(perform: stopRepeatingDelete)
+    }
+
+    private func press() {
+        guard !isPressed else { return }
+        isPressed = true
+        onPressFeedback()
+        if key == .delete {
+            startRepeatingDelete()
+        } else {
+            action()
+        }
+    }
+
+    private func release() {
+        isPressed = false
+        stopRepeatingDelete()
     }
 
     private var keyCap: some View {
@@ -223,6 +279,8 @@ private struct KeyButton: View {
     private func startRepeatingDelete() {
         guard repeatTask == nil else { return }
         action()
+        // Held delete accelerates the way the system keyboard does: a pause
+        // long enough to mean "I meant one character", then a steady run.
         repeatTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(350))
             while !Task.isCancelled {
@@ -271,25 +329,38 @@ private struct KeyButton: View {
     }
 }
 
-private struct KeyPopupButtonStyle: ButtonStyle {
-    let popupText: String?
+private struct SuggestionStrip: View {
+    let suggestions: [KeyboardSuggestion]
+    let onApply: (KeyboardSuggestion) -> Void
 
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .contentShape(Rectangle())
-            .overlay(alignment: .top) {
-                if configuration.isPressed, let popupText {
-                    Text(popupText)
-                        .font(.title2.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .frame(width: 54, height: 58)
-                        .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 9))
-                        .shadow(color: .black.opacity(0.28), radius: 2, y: 1)
-                        .offset(y: -48)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, suggestion in
+                if index > 0 {
+                    Divider().frame(height: 18)
                 }
+                Button {
+                    onApply(suggestion)
+                } label: {
+                    Text(suggestion.isLiteral ? "\u{201C}\(suggestion.text)\u{201D}" : suggestion.text)
+                        .font(.callout)
+                        // The correction that space would apply is the one
+                        // worth marking, so accepting it is a decision rather
+                        // than a surprise.
+                        .fontWeight(suggestion.isAutocorrect ? .semibold : .regular)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, minHeight: 34)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    suggestion.isLiteral
+                        ? "Keep \(suggestion.text)"
+                        : "Replace with \(suggestion.text)"
+                )
             }
-            .zIndex(configuration.isPressed ? 1 : 0)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
