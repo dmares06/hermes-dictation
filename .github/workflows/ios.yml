@@ -8,17 +8,21 @@ on:
 jobs:
   core-tests:
     name: WhisperDictCore tests
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Run swift test
         run: swift test
 
   build-app:
     name: Build iOS app (unsigned)
-    runs-on: macos-15
+    # The project targets the iOS 26 SDK (AVAudioSession.allowBluetoothHFP and
+    # friends), so an older image's Xcode cannot compile it.
+    runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - name: Show selected Xcode
+        run: xcodebuild -version
       - name: Cache Swift packages
         uses: actions/cache@v4
         with:
