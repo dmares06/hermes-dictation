@@ -220,6 +220,7 @@ private struct AgentRecordingCard: View {
 
     private var statusColor: Color {
         if case .failed = controller.phase { return .red }
+        if controller.isReconnecting { return .orange }
         return controller.conversationActive ? .red : .primary
     }
 
@@ -238,6 +239,7 @@ private struct AgentRecordingCard: View {
         }
         switch controller.phase {
         case .connecting: return "Creating a secure live audio session…"
+        case .reconnecting: return "The connection dropped. Holding the conversation open while it comes back…"
         case .recording:
             return controller.usesRealtime
                 ? "Speak naturally. You can interrupt Hermes; tap the red button to end."
@@ -245,7 +247,7 @@ private struct AgentRecordingCard: View {
         case .transcribing: return "Understanding your request…"
         case .speaking: return "Hermes will listen again after speaking"
         case .ready: return "Getting ready to listen again…"
-        case .failed: return "End the conversation, then try again"
+        case .failed: return "Tap the button to try again, or use the slower offline voice"
         }
     }
 

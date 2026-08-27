@@ -65,6 +65,11 @@ struct ContentView: View {
                 refreshListeningWindow()
                 return
             }
+            // Only a real backgrounding ends a session. iOS also sends
+            // `.inactive` for a permission prompt, a notification banner, or a
+            // Control Center swipe — tearing the conversation down there is
+            // why tapping to talk could hang up before a word was said.
+            guard newPhase == .background else { return }
             Task {
                 if !dictation.isKeyboardHandoffSession {
                     await dictation.stopIfNeeded(settings: settings)
@@ -79,6 +84,11 @@ struct ContentView: View {
             refreshListeningWindow()
             agent.notes = notes
             agent.emailDelivery = settings.emailDelivery
+            // The agent needs the audio session to itself. Closing the window
+            // here, before it configures anything, is what keeps a live
+            // conversation from being killed by the keepalive rebuilding its
+            // capture graph underneath it.
+            agent.prepareForExclusiveAudio = { listening.deactivate() }
         }
         .onChange(of: settings.emailDelivery) { _, delivery in agent.emailDelivery = delivery }
         .sheet(item: $reminderPrefill) { text in

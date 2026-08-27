@@ -25,6 +25,9 @@ final class VoiceAgentController {
     enum Phase: Equatable {
         case ready
         case connecting
+        /// The live transport dropped and is being re-established. The
+        /// conversation is still open, so this is not a failure yet.
+        case reconnecting
         case recording
         case transcribing
         case speaking
@@ -54,6 +57,16 @@ final class VoiceAgentController {
     var messagePayload: MessageComposePayload?
     /// Where in-app notes and reminders go; injected by the root view.
     @ObservationIgnored var notes: NotesController?
+    /// Releases any audio the rest of the app is holding.
+    ///
+    /// The resident listening window keeps a capture engine running for
+    /// background dictation. Starting a conversation on top of it makes the
+    /// keepalive and the agent reconfigure the audio session against each
+    /// other — the keepalive rebuilds its graph, takes the session back, and
+    /// the conversation dies before the user can say anything. The root view
+    /// wires this to close the window first, synchronously, so the handoff
+    /// happens in a defined order instead of whenever SwiftUI notices.
+    @ObservationIgnored var prepareForExclusiveAudio: (@MainActor () -> Void)?
     /// Mirrors the user's speaker preference into the live audio route.
     var usesSpeaker = true {
         didSet { realtimeClient.setSpeakerEnabled(usesSpeaker) }
@@ -122,6 +135,7 @@ final class VoiceAgentController {
 
     var isRecording: Bool { phase == .recording }
     var isBusy: Bool { phase == .connecting || phase == .transcribing || phase == .speaking }
+    var isReconnecting: Bool { phase == .reconnecting }
     var pendingAction: VoiceAgentAction? { pendingRealtimeAction ?? session.pendingAction }
     var canUseOfflineMode: Bool {
         if case .failed = phase { return !conversationActive }
@@ -140,6 +154,7 @@ final class VoiceAgentController {
         switch phase {
         case .ready: conversationActive ? "Ready for your next request" : "Ready for a conversation"
         case .connecting: "Connecting to Hermes Realtime…"
+        case .reconnecting: "Connection dropped — reconnecting…"
         case .recording: "Listening — speak naturally…"
         case .transcribing: "Understanding on this iPhone…"
         case .speaking: usesRealtime ? "Hermes is responding…" : "Speaking…"
@@ -228,6 +243,8 @@ final class VoiceAgentController {
             return
         }
 
+        prepareForExclusiveAudio?()
+
         let id = UUID()
         conversationActive = true
         conversationID = id
@@ -289,6 +306,7 @@ final class VoiceAgentController {
     private func startRecording(settings: SharedState) async -> Bool {
         guard !isBusy else { return false }
         speaker.stop()
+        prepareForExclusiveAudio?()
 
         let defaults = UserDefaults(suiteName: SharedState.appGroupID)
         guard let modelPath = settings.modelFolderPath,
@@ -586,9 +604,13 @@ final class VoiceAgentController {
         guard usesRealtime || state == .connecting else { return }
         switch state {
         case .disconnected:
-            if conversationActive { phase = .failed("The live conversation disconnected. Tap to reconnect.") }
+            if conversationActive { phase = .failed("The live conversation disconnected. Tap to start again.") }
         case .connecting:
             phase = .connecting
+        case .interrupted:
+            // Not an ending: the transport is being re-checked and usually
+            // comes straight back. Say so rather than tearing the call down.
+            if conversationActive { phase = .reconnecting }
         case .listening:
             phase = .recording
         case .responding:
@@ -599,8 +621,12 @@ final class VoiceAgentController {
             phase = .failed(message)
             conversationActive = false
             usesRealtime = false
+            pendingRealtimeAction = nil
             conversationID = nil
             conversationSettings = nil
+            // Without this the reason only ever appears in the status line,
+            // which the next state change overwrites.
+            messages.append(VoiceAgentMessage(role: .hermes, text: message))
             refreshHistory()
         }
     }

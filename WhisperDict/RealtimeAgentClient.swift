@@ -14,6 +14,9 @@ final class RealtimeAgentClient: NSObject {
         case connecting
         case listening
         case responding
+        /// The transport dropped but is still being re-checked; the
+        /// conversation is not over yet.
+        case interrupted
         case failed(String)
     }
 
@@ -42,6 +45,12 @@ final class RealtimeAgentClient: NSObject {
     /// Speaker is the default: this is a phone the user talks to hands-free.
     private var usesSpeaker = true
     private var routeObserver: NSObjectProtocol?
+    /// A dropped ICE connection is usually transient: WebRTC re-checks its
+    /// candidate pairs and is back within a second or two. Ending the call on
+    /// the first blip is what makes a conversation die the moment it starts,
+    /// so a drop only becomes a failure once it outlasts this window.
+    private static let reconnectGrace: Duration = .seconds(8)
+    private var reconnectTask: Task<Void, Never>?
 
     func start() async throws {
         guard peerConnection == nil else { return }
@@ -125,6 +134,7 @@ final class RealtimeAgentClient: NSObject {
     func stop() {
         guard !isStopping else { return }
         isStopping = true
+        cancelReconnectWatchdog()
         dataChannel?.delegate = nil
         dataChannel?.close()
         dataChannel = nil
@@ -173,12 +183,24 @@ final class RealtimeAgentClient: NSObject {
 
     private func configureAudioSession() throws {
         let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(
-            .playAndRecord,
-            mode: .voiceChat,
-            options: [.defaultToSpeaker, .allowBluetoothHFP]
-        )
-        try audioSession.setActive(true)
+        // WebRTC's audio device module owns AVAudioSession for the duration of
+        // a call. Configuring it behind RTCAudioSession's lock stops the two
+        // from reconfiguring the session against each other during setup,
+        // which is what leaves a just-started call with no working microphone.
+        let webRTCSession = RTCAudioSession.sharedInstance()
+        webRTCSession.lockForConfiguration()
+        do {
+            try audioSession.setCategory(
+                .playAndRecord,
+                mode: .voiceChat,
+                options: [.defaultToSpeaker, .allowBluetoothHFP]
+            )
+            try audioSession.setActive(true)
+        } catch {
+            webRTCSession.unlockForConfiguration()
+            throw error
+        }
+        webRTCSession.unlockForConfiguration()
         applyOutputRoute()
 
         if routeObserver == nil {
@@ -192,6 +214,32 @@ final class RealtimeAgentClient: NSObject {
                 Task { @MainActor in self?.applyOutputRoute() }
             }
         }
+    }
+
+    /// Starts the grace period for a dropped transport. The conversation
+    /// stays up and the UI says so; only an outage that survives the grace
+    /// period is reported as a failure.
+    private func beginReconnectWatchdog() {
+        guard reconnectTask == nil else { return }
+        onStateChange?(.interrupted)
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.reconnectGrace)
+            guard !Task.isCancelled, let self, self.reconnectTask != nil else { return }
+            self.reconnectTask = nil
+            switch self.peerConnection?.iceConnectionState {
+            case .connected, .completed:
+                self.onStateChange?(.listening)
+            case .none:
+                return
+            default:
+                self.onStateChange?(.failed("The live connection dropped and did not come back."))
+            }
+        }
+    }
+
+    private func cancelReconnectWatchdog() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
     }
 
     private func createOffer(on peerConnection: RTCPeerConnection) async throws -> RTCSessionDescription {
@@ -386,10 +434,20 @@ extension RealtimeAgentClient: RTCPeerConnectionDelegate {
         Task { @MainActor [weak self] in
             guard let self else { return }
             switch newState {
-            case .connected, .completed: self.onStateChange?(.listening)
-            case .failed: self.onStateChange?(.failed("The Realtime connection failed."))
-            case .disconnected, .closed: self.onStateChange?(.disconnected)
-            default: break
+            case .connected, .completed:
+                self.cancelReconnectWatchdog()
+                self.onStateChange?(.listening)
+            case .failed:
+                self.cancelReconnectWatchdog()
+                self.onStateChange?(.failed("The Realtime connection failed."))
+            case .disconnected:
+                // Transient by definition in WebRTC. Give it a moment.
+                self.beginReconnectWatchdog()
+            case .closed:
+                self.cancelReconnectWatchdog()
+                self.onStateChange?(.disconnected)
+            default:
+                break
             }
         }
     }
