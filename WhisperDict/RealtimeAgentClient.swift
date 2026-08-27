@@ -21,6 +21,8 @@ final class RealtimeAgentClient: NSObject {
     var onUserTranscript: ((String) -> Void)?
     var onAssistantTranscript: ((String) -> Void)?
     var onPreparedAction: ((RealtimePreparedAction) -> Void)?
+    /// Runs a read-only tool and returns what the model should hear back.
+    var onInformationRequest: ((String, [String: Any]) async -> String)?
 
     private static let backendURL = URL(string: "https://whisperdict-realtime.vercel.app/api/realtime-session")!
     private static let factory: RTCPeerConnectionFactory = {
@@ -37,6 +39,9 @@ final class RealtimeAgentClient: NSObject {
     // a candidate-less offer as an unparseable SDP.
     private var iceGatheringContinuation: CheckedContinuation<Void, Never>?
     private var iceGatheringComplete = false
+    /// Speaker is the default: this is a phone the user talks to hands-free.
+    private var usesSpeaker = true
+    private var routeObserver: NSObjectProtocol?
 
     func start() async throws {
         guard peerConnection == nil else { return }
@@ -129,9 +134,41 @@ final class RealtimeAgentClient: NSObject {
         iceGatheringContinuation?.resume()
         iceGatheringContinuation = nil
         iceGatheringComplete = false
+        if let routeObserver {
+            NotificationCenter.default.removeObserver(routeObserver)
+            self.routeObserver = nil
+        }
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         isStopping = false
         onStateChange?(.disconnected)
+    }
+
+    /// Routes the conversation to the speaker rather than the earpiece.
+    ///
+    /// `.voiceChat` mode takes the receiver as its default output and
+    /// overrides `.defaultToSpeaker`, which is why a call otherwise arrives in
+    /// the earpiece and the phone has to be held up. The mode is worth keeping
+    /// for its echo cancellation, so the route is overridden explicitly
+    /// instead — but never over headphones or a Bluetooth headset, where
+    /// forcing the speaker would be plainly wrong.
+    func setSpeakerEnabled(_ enabled: Bool) {
+        usesSpeaker = enabled
+        applyOutputRoute()
+    }
+
+    private func applyOutputRoute() {
+        let audioSession = AVAudioSession.sharedInstance()
+        guard !Self.routeHasHeadset(audioSession) else {
+            try? audioSession.overrideOutputAudioPort(.none)
+            return
+        }
+        try? audioSession.overrideOutputAudioPort(usesSpeaker ? .speaker : .none)
+    }
+
+    private static func routeHasHeadset(_ session: AVAudioSession) -> Bool {
+        let wired: Set<AVAudioSession.Port> = [.headphones, .headsetMic]
+        let wireless: Set<AVAudioSession.Port> = [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE, .carAudio]
+        return session.currentRoute.outputs.contains { wired.contains($0.portType) || wireless.contains($0.portType) }
     }
 
     private func configureAudioSession() throws {
@@ -142,6 +179,19 @@ final class RealtimeAgentClient: NSObject {
             options: [.defaultToSpeaker, .allowBluetoothHFP]
         )
         try audioSession.setActive(true)
+        applyOutputRoute()
+
+        if routeObserver == nil {
+            routeObserver = NotificationCenter.default.addObserver(
+                forName: AVAudioSession.routeChangeNotification,
+                object: audioSession,
+                queue: .main
+            ) { [weak self] _ in
+                // Plugging in or unplugging replaces the route, discarding the
+                // override; without this the audio silently returns to the ear.
+                Task { @MainActor in self?.applyOutputRoute() }
+            }
+        }
     }
 
     private func createOffer(on peerConnection: RTCPeerConnection) async throws -> RTCSessionDescription {
@@ -267,6 +317,13 @@ final class RealtimeAgentClient: NSObject {
                   let argumentsData = argumentsString.data(using: .utf8),
                   let arguments = try? JSONSerialization.jsonObject(with: argumentsData) as? [String: Any]
             else { continue }
+            if Self.informationTools.contains(name) {
+                Task { [weak self] in
+                    let output = await self?.onInformationRequest?(name, arguments)
+                    self?.completeFunctionCall(id: callID, output: output ?? "No result was available.")
+                }
+                continue
+            }
             guard let action = preparedAction(name: name, arguments: arguments) else {
                 completeFunctionCall(id: callID, output: "Rejected: the requested action did not pass local validation.")
                 continue
@@ -274,6 +331,12 @@ final class RealtimeAgentClient: NSObject {
             onPreparedAction?(RealtimePreparedAction(callID: callID, action: action))
         }
     }
+
+    /// Tools that only read. They carry no side effect to confirm, so making
+    /// the user approve them would turn "what's the weather" into a dialog.
+    static let informationTools: Set<String> = [
+        "search_web", "search_notes", "list_reminders", "get_datetime",
+    ]
 
     private func preparedAction(name: String, arguments: [String: Any]) -> VoiceAgentAction? {
         switch name {

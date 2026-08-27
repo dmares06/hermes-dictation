@@ -12,6 +12,10 @@ export const realtimeSession = Object.freeze({
     "Notes are saved inside Hermes with save_note; use prepare_note only when the user names Apple Notes.",
     "For reminders use create_reminder with an ISO 8601 due time when the user gives one; today's date is provided in the session.",
     "When the user asks to send an email, use send_email; use prepare_email only when they ask for a draft to review in their mail app. Either way the client asks the user to confirm first.",
+    "search_web, search_notes, list_reminders and get_datetime read only: they run immediately, need no confirmation, and return their result to you. Answer from their result rather than from memory.",
+    "Use search_web whenever the answer depends on current facts — news, prices, scores, weather, opening hours, anything after your training data. Never guess at these, and never state a fact you did not verify as though you had.",
+    "Call get_datetime before any reasoning about today, tomorrow, or elapsed time; do not assume the date.",
+    "Summarise what a tool returned in one or two spoken sentences. Do not read out URLs.",
   ].join(" "),
   audio: {
     input: {
@@ -139,6 +143,60 @@ export const realtimeSession = Object.freeze({
           },
         },
         required: ["destination"],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: "function",
+      name: "search_web",
+      description:
+        "Search the web and return a short spoken answer with sources. Runs immediately without user confirmation. "
+        + "Use for anything current: news, weather, prices, scores, opening hours, or facts newer than your training data.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "What to search for, as a natural-language question." },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: "function",
+      name: "search_notes",
+      description:
+        "Search the notes saved in Hermes and return the matches. Runs immediately without user confirmation. "
+        + "Use when the user asks what they wrote down or saved.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Words to look for. Empty returns the most recent notes." },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: "function",
+      name: "list_reminders",
+      description:
+        "List the user's upcoming reminders. Runs immediately without user confirmation. "
+        + "Use when the user asks what they have coming up or what they need to do.",
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+    },
+    {
+      type: "function",
+      name: "get_datetime",
+      description:
+        "Get the current date, time, and time zone on the user's iPhone. Runs immediately without user confirmation. "
+        + "Call this before any reasoning that depends on today's date.",
+      parameters: {
+        type: "object",
+        properties: {},
         additionalProperties: false,
       },
     },

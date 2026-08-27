@@ -33,6 +33,11 @@ final class SharedState {
     var listeningWindow: ListeningWindowDuration {
         didSet { defaults.set(listeningWindow.rawValue, forKey: Keys.listeningWindow) }
     }
+    /// Realtime conversations play through the speaker by default: this is a
+    /// phone you talk to, not one you hold to your ear.
+    var agentUsesSpeaker: Bool {
+        didSet { defaults.set(agentUsesSpeaker, forKey: Keys.agentUsesSpeaker) }
+    }
     var emailDelivery: EmailDelivery {
         didSet { defaults.set(emailDelivery.rawValue, forKey: Keys.emailDelivery) }
     }
@@ -57,6 +62,7 @@ final class SharedState {
         self.defaults = defaults ?? .standard
         self.appearanceStore = AppearanceStore(defaults: self.defaults)
         self.modelSize = ModelSize(rawValue: self.defaults.string(forKey: Keys.modelSize) ?? "small") ?? .small
+        self.agentUsesSpeaker = self.defaults.object(forKey: Keys.agentUsesSpeaker) as? Bool ?? true
         self.removeFillers = self.defaults.object(forKey: Keys.removeFillers) as? Bool ?? true
         self.autoPunctuate = self.defaults.object(forKey: Keys.autoPunctuate) as? Bool ?? true
         self.autoCapitalize = self.defaults.object(forKey: Keys.autoCapitalize) as? Bool ?? true
@@ -87,6 +93,7 @@ final class SharedState {
         static let defaultMessageRecipient = "defaultMessageRecipient"
         static let listeningWindow = "listeningWindow"
         static let emailDelivery = "emailDelivery"
+        static let agentUsesSpeaker = "agentUsesSpeaker"
         static let modelFolderPath = "modelFolderPath"
     }
 }

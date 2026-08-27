@@ -36,6 +36,8 @@ struct HermesBackendClient {
                 case "unauthorized": "The backend rejected this app's token."
                 case "invalid_recipient": "That email address doesn't look right."
                 case "send_failed", "draft_failed": "Gmail refused the message."
+                case "search_failed": "The web search didn't come back."
+                case "invalid_query", "query_too_long": "That search request wasn't valid."
                 case "token_refresh_failed": "The Gmail connection expired; reconnect it on the backend."
                 default: "The backend couldn't send the email (\(code))."
                 }
@@ -58,6 +60,40 @@ struct HermesBackendClient {
         request.timeoutInterval = 10
         guard let (data, _) = try? await session.data(for: request) else { return nil }
         return try? JSONDecoder().decode(Health.self, from: data)
+    }
+
+    struct SearchResult: Decodable {
+        struct Source: Decodable {
+            let title: String
+            let url: String
+        }
+        let ok: Bool
+        let answer: String
+        let sources: [Source]
+    }
+
+    /// Runs a web search on the backend, which holds the OpenAI key.
+    func search(_ query: String) async throws -> SearchResult {
+        let token = try clientToken()
+        var request = URLRequest(url: Self.baseURL.appendingPathComponent("api/search"))
+        request.httpMethod = "POST"
+        // Long enough for a real search, short enough that the conversation
+        // does not stall silently while Hermes waits.
+        request.timeoutInterval = 25
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["query": query])
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw ClientError.invalidResponse }
+        guard http.statusCode == 200 else {
+            let code = (try? JSONDecoder().decode([String: String].self, from: data))?["error"] ?? "http_\(http.statusCode)"
+            throw ClientError.rejected(code: code, status: http.statusCode)
+        }
+        guard let result = try? JSONDecoder().decode(SearchResult.self, from: data), result.ok else {
+            throw ClientError.invalidResponse
+        }
+        return result
     }
 
     func sendEmail(_ draft: EmailDraft, mode: Mode = .send) async throws -> Delivery {

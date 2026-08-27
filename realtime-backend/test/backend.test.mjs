@@ -24,19 +24,25 @@ test("session uses responsive semantic turn detection and a natural voice", () =
   assert.equal(realtimeSession.audio.input.transcription.model, "gpt-4o-mini-transcribe");
 });
 
-test("session exposes only the allowlisted review actions", () => {
+// The read-only tools run without asking the user, so which tools are in
+// which group is a safety boundary, not a detail. Anything that acts on the
+// user's behalf has to stay in the confirmed group.
+const REVIEWED_TOOLS = [
+  "prepare_message",
+  "prepare_email",
+  "send_email",
+  "prepare_note",
+  "save_note",
+  "create_reminder",
+  "open_destination",
+  "run_shortcut",
+];
+const READ_ONLY_TOOLS = ["search_web", "search_notes", "list_reminders", "get_datetime"];
+
+test("session exposes only the allowlisted actions", () => {
   assert.deepEqual(
-    realtimeSession.tools.map((tool) => tool.name),
-    [
-      "prepare_message",
-      "prepare_email",
-      "send_email",
-      "prepare_note",
-      "save_note",
-      "create_reminder",
-      "open_destination",
-      "run_shortcut",
-    ],
+    realtimeSession.tools.map((tool) => tool.name).sort(),
+    [...REVIEWED_TOOLS, ...READ_ONLY_TOOLS].sort(),
   );
   assert.equal(realtimeSession.tool_choice, "auto");
 
@@ -150,3 +156,27 @@ function restoreEnvironment(name, value) {
     process.env[name] = value;
   }
 }
+
+test("read-only tools take no action on the user's behalf", () => {
+  // A tool that only reads may skip confirmation. One that writes, sends, or
+  // opens something must not be in this group, whatever it is called.
+  for (const name of READ_ONLY_TOOLS) {
+    const tool = realtimeSession.tools.find((candidate) => candidate.name === name);
+    assert.ok(tool, `${name} is missing from the session`);
+    assert.match(tool.description, /without user confirmation/);
+    assert.doesNotMatch(tool.name, /^(send|save|create|open|run|prepare)_/);
+  }
+});
+
+test("every tool that acts still requires confirmation", () => {
+  for (const name of REVIEWED_TOOLS) {
+    const tool = realtimeSession.tools.find((candidate) => candidate.name === name);
+    assert.ok(tool, `${name} is missing from the session`);
+    assert.doesNotMatch(tool.description, /without user confirmation/);
+  }
+});
+
+test("the model is told to verify current facts rather than guess", () => {
+  assert.match(realtimeSession.instructions, /search_web/);
+  assert.match(realtimeSession.instructions, /never state a fact you did not verify/i);
+});

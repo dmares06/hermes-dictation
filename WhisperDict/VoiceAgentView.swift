@@ -5,6 +5,7 @@ struct VoiceAgentView: View {
     @Environment(SharedState.self) private var settings
     let controller: VoiceAgentController
     let downloadService: ModelDownloadService
+    @State private var isAtBottom = true
 
     var body: some View {
         @Bindable var controller = controller
@@ -46,23 +47,51 @@ struct VoiceAgentView: View {
                                 clear: controller.clearConversationHistory
                             )
                         }
+
+                        // A sentinel rather than a scroll-offset reading: it is
+                        // on screen exactly when the end of the feed is, which
+                        // is the question being asked.
+                        Color.clear
+                            .frame(height: 1)
+                            .onAppear { isAtBottom = true }
+                            .onDisappear { isAtBottom = false }
                     }
                     .padding()
                 }
                 .background(Color(uiColor: .systemGroupedBackground))
                 .onChange(of: controller.messages.count) { _, _ in
-                    guard let last = controller.messages.last else { return }
+                    // Follow the conversation only while the reader is already
+                    // at the end. Yanking the view down mid-sentence is what
+                    // makes it impossible to scroll back and read anything.
+                    guard isAtBottom, let last = controller.messages.last else { return }
                     withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
             .navigationTitle("Hermes Agent")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        settings.agentUsesSpeaker.toggle()
+                        controller.usesSpeaker = settings.agentUsesSpeaker
+                    } label: {
+                        Label(
+                            settings.agentUsesSpeaker ? "Speaker on" : "Speaker off",
+                            systemImage: settings.agentUsesSpeaker ? "speaker.wave.2.fill" : "ear"
+                        )
+                    }
+                    .accessibilityHint(
+                        settings.agentUsesSpeaker
+                            ? "Hermes plays through the speaker. Tap to use the earpiece."
+                            : "Hermes plays through the earpiece. Tap to use the speaker."
+                    )
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink(destination: SettingsView()) {
                         Label("Settings", systemImage: "gearshape")
                     }
                 }
             }
+            .onAppear { controller.usesSpeaker = settings.agentUsesSpeaker }
             .alert("Microphone access needed", isPresented: $controller.showsMicrophoneSettings) {
                 Button("Open Settings", action: controller.openAppSettings)
                 Button("Not now", role: .cancel) {}

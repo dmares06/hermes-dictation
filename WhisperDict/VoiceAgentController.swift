@@ -54,6 +54,10 @@ final class VoiceAgentController {
     var messagePayload: MessageComposePayload?
     /// Where in-app notes and reminders go; injected by the root view.
     @ObservationIgnored var notes: NotesController?
+    /// Mirrors the user's speaker preference into the live audio route.
+    var usesSpeaker = true {
+        didSet { realtimeClient.setSpeakerEnabled(usesSpeaker) }
+    }
     /// Mirrors Settings; applied to every email the agent prepares.
     var emailDelivery: EmailDelivery = .mailApp {
         didSet { session.emailDelivery = emailDelivery }
@@ -98,6 +102,9 @@ final class VoiceAgentController {
         }
         realtimeClient.onAssistantTranscript = { [weak self] transcript in
             self?.appendRealtimeMessage(role: .hermes, text: transcript)
+        }
+        realtimeClient.onInformationRequest = { [weak self] name, arguments in
+            await self?.runInformationTool(name, arguments) ?? "No result was available."
         }
         realtimeClient.onPreparedAction = { [weak self] prepared in
             guard let self else { return }
@@ -448,6 +455,63 @@ final class VoiceAgentController {
         elapsedTask = nil
         audioLevel = 0
         isCompletingTurn = false
+    }
+
+    // MARK: - Read-only tools
+
+    /// Runs a tool that only reads and returns what Hermes should hear back.
+    ///
+    /// These bypass the confirmation flow on purpose: there is nothing to undo
+    /// in a search or a lookup, and making the user approve one would turn
+    /// "what's the weather" into a dialog box.
+    private func runInformationTool(_ name: String, _ arguments: [String: Any]) async -> String {
+        switch name {
+        case "get_datetime":
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE, d MMMM yyyy 'at' h:mm a zzz"
+            return "It is currently \(formatter.string(from: Date())) in \(TimeZone.current.identifier)."
+
+        case "search_web":
+            guard let query = (arguments["query"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !query.isEmpty
+            else { return "No search query was provided." }
+            do {
+                let result = try await HermesBackendClient().search(query)
+                guard !result.answer.isEmpty else { return "The search returned nothing useful." }
+                let sources = result.sources.prefix(3).map(\.title).joined(separator: ", ")
+                return sources.isEmpty ? result.answer : "\(result.answer) (Sources: \(sources).)"
+            } catch {
+                return "The web search failed: \(error.localizedDescription)"
+            }
+
+        case "search_notes":
+            guard let notes else { return "Notes are not available right now." }
+            let query = (arguments["query"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let matches = query.isEmpty ? Array(notes.notes.prefix(5)) : Array(notes.search(query).prefix(5))
+            guard !matches.isEmpty else {
+                return query.isEmpty ? "There are no saved notes." : "No notes match \"\(query)\"."
+            }
+            return matches
+                .map { "\($0.title): \($0.body.prefix(200))" }
+                .joined(separator: " | ")
+
+        case "list_reminders":
+            guard let notes else { return "Reminders are not available right now." }
+            await notes.refreshReminders()
+            let upcoming = notes.reminders.filter { !$0.isCompleted }.prefix(8)
+            guard !upcoming.isEmpty else { return "There are no upcoming reminders." }
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE d MMMM 'at' h:mm a"
+            return upcoming
+                .map { item in
+                    guard let due = item.dueDate else { return item.title }
+                    return "\(item.title), due \(formatter.string(from: due))"
+                }
+                .joined(separator: " | ")
+
+        default:
+            return "That tool is not available."
+        }
     }
 
     private func execute(_ action: VoiceAgentAction) async {
