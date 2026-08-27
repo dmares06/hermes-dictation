@@ -5,6 +5,15 @@ import SwiftUI
 struct WhisperDictShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
+            intent: TalkToWhisperDictIntent(),
+            phrases: [
+                "Talk to \(.applicationName)",
+                "Dictate with \(.applicationName)",
+            ],
+            shortTitle: "Talk",
+            systemImageName: "waveform"
+        )
+        AppShortcut(
             intent: StartWhisperDictIntent(),
             phrases: [
                 "Start dictating with \(.applicationName)",

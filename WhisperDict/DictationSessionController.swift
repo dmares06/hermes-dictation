@@ -26,6 +26,12 @@ final class DictationSessionController {
     private let recorder: DictationAudioRecorder
     private let transcriber: DictationTranscriber
     private let store: TranscriptStore
+    private let activityHost: DictationActivityHost
+
+    /// Set while a listening window holds the audio session open.
+    var usesSharedAudioSession = false
+    /// The window's running capture engine, tapped instead of started.
+    @ObservationIgnored var sharedAudioEngine: (() -> AVAudioEngine?)?
     // Live access stays on the main actor; deinit may run from a nonisolated context.
     @ObservationIgnored
     nonisolated(unsafe) private var elapsedTask: Task<Void, Never>?
@@ -33,19 +39,17 @@ final class DictationSessionController {
     nonisolated(unsafe) private var stopRequestTask: Task<Void, Never>?
     @ObservationIgnored
     nonisolated(unsafe) private var memoryObserver: NSObjectProtocol?
-    @ObservationIgnored
-    private var backgroundActivity: Activity<WhisperDictActivityAttributes>?
-    @ObservationIgnored
-    private var backgroundActivityStartedAt: Date?
 
     init(
         recorder: DictationAudioRecorder = DictationAudioRecorder(),
         transcriber: DictationTranscriber = DictationTranscriber(),
-        store: TranscriptStore = TranscriptStore()
+        store: TranscriptStore = TranscriptStore(),
+        activityHost: DictationActivityHost = DictationActivityHost()
     ) {
         self.recorder = recorder
         self.transcriber = transcriber
         self.store = store
+        self.activityHost = activityHost
         transcript = store.latest?.text ?? ""
         history = store.history
 
@@ -136,6 +140,16 @@ final class DictationSessionController {
         UIApplication.shared.open(url)
     }
 
+    /// Loads the speech model before there is anything to transcribe.
+    ///
+    /// Called when a dictation becomes plausible — the app coming forward, or
+    /// the listening window opening — so the load never lands between the
+    /// user finishing a sentence and seeing text.
+    func prewarmModel(settings: SharedState) async {
+        guard !isRecording, !isBusy, let modelPath = settings.modelFolderPath else { return }
+        await transcriber.prewarm(modelPath: modelPath)
+    }
+
     private func startRecording(settings: SharedState, keyboardHandoff: Bool = false) async {
         guard !isBusy else { return }
         let defaults = UserDefaults(suiteName: SharedState.appGroupID)
@@ -159,7 +173,12 @@ final class DictationSessionController {
         }
 
         do {
+            recorder.managesAudioSession = !usesSharedAudioSession
+            recorder.sharedEngine = sharedAudioEngine
             try recorder.start()
+            // Load the model while the user is still talking, so its cost does
+            // not land between them stopping and seeing text.
+            Task { await transcriber.prewarm(modelPath: modelPath) }
             let startedAt = Date()
             isKeyboardHandoffSession = keyboardHandoff
             wasInterrupted = false
@@ -169,7 +188,7 @@ final class DictationSessionController {
             startElapsedTimer()
             if keyboardHandoff {
                 BackgroundDictationState.begin(now: startedAt)
-                startBackgroundActivity(startedAt: startedAt)
+                await activityHost.ensureStarted(BackgroundDictationActivityContent.recording(startedAt: startedAt))
                 startStopRequestMonitor(settings: settings, startedAt: startedAt)
             }
         } catch {
@@ -182,12 +201,12 @@ final class DictationSessionController {
     }
 
     private func stopAndTranscribe(settings: SharedState? = nil, interrupted: Bool = false) async {
-        guard let audioURL = recorder.stop() else {
+        guard let samples = recorder.stop() else {
             if isRecording {
                 let message = "The recording was empty. Please try again."
                 if isKeyboardHandoffSession {
                     BackgroundDictationState.fail(message)
-                    await endBackgroundActivity(finalState: nil, dismissalPolicy: .immediate)
+                    await activityHost.finish(BackgroundDictationActivityContent.failed(), dismissalPolicy: .immediate)
                 }
                 isKeyboardHandoffSession = false
                 phase = .failed(message)
@@ -202,18 +221,17 @@ final class DictationSessionController {
         phase = .transcribing
         if isKeyboardHandoffSession {
             BackgroundDictationState.setPhase(.transcribing)
-            await updateBackgroundActivity(
-                BackgroundDictationActivityContent.transcribing(startedAt: backgroundActivityStartedAt ?? Date())
+            await activityHost.update(
+                BackgroundDictationActivityContent.transcribing(startedAt: activityHost.startedAt ?? Date())
             )
         }
 
-        defer { try? FileManager.default.removeItem(at: audioURL) }
         let defaults = UserDefaults(suiteName: SharedState.appGroupID)
         let modelPath = settings?.modelFolderPath ?? defaults?.string(forKey: "modelFolderPath")
         guard let modelPath else {
             if isKeyboardHandoffSession {
                 BackgroundDictationState.fail("The speech model is missing. Prepare it again in WhisperDict.")
-                await endBackgroundActivity(finalState: nil, dismissalPolicy: .immediate)
+                await activityHost.finish(BackgroundDictationActivityContent.failed(), dismissalPolicy: .immediate)
             }
             isKeyboardHandoffSession = false
             phase = .failed("The speech model is missing. Prepare it again below.")
@@ -221,7 +239,7 @@ final class DictationSessionController {
         }
 
         do {
-            let rawText = try await transcriber.transcribe(audioURL: audioURL, modelPath: modelPath)
+            let rawText = try await transcriber.transcribe(samples: samples, modelPath: modelPath)
             let options = TranscriptCleanupOptions(
                 removeFillers: settings?.removeFillers ?? defaults?.object(forKey: "removeFillers") as? Bool ?? true,
                 autoPunctuate: settings?.autoPunctuate ?? defaults?.object(forKey: "autoPunctuate") as? Bool ?? true,
@@ -232,7 +250,7 @@ final class DictationSessionController {
                 let message = "No speech was detected. Try speaking closer to the microphone."
                 if isKeyboardHandoffSession {
                     BackgroundDictationState.fail(message)
-                    await endBackgroundActivity(finalState: nil, dismissalPolicy: .immediate)
+                    await activityHost.finish(BackgroundDictationActivityContent.failed(), dismissalPolicy: .immediate)
                 }
                 isKeyboardHandoffSession = false
                 phase = .failed(message)
@@ -241,14 +259,15 @@ final class DictationSessionController {
             try store.save(cleaned)
             defaults?.set(cleaned, forKey: "pendingTranscription")
             defaults?.set(Date().timeIntervalSince1970, forKey: "pendingTranscriptionDate")
+            DictationSignalCenter.post(.transcriptReady)
             UIPasteboard.general.string = cleaned
             transcript = cleaned
             history = store.history
             if isKeyboardHandoffSession {
                 BackgroundDictationState.finish()
-                let startedAt = backgroundActivityStartedAt ?? Date()
-                await endBackgroundActivity(
-                    finalState: BackgroundDictationActivityContent.ready(startedAt: startedAt),
+                let startedAt = activityHost.startedAt ?? Date()
+                await activityHost.finish(
+                    BackgroundDictationActivityContent.ready(startedAt: startedAt),
                     dismissalPolicy: .after(Date().addingTimeInterval(8))
                 )
             }
@@ -257,7 +276,7 @@ final class DictationSessionController {
         } catch {
             if isKeyboardHandoffSession {
                 BackgroundDictationState.fail(error.localizedDescription)
-                await endBackgroundActivity(finalState: nil, dismissalPolicy: .immediate)
+                await activityHost.finish(BackgroundDictationActivityContent.failed(), dismissalPolicy: .immediate)
             }
             isKeyboardHandoffSession = false
             phase = .failed(error.localizedDescription)
@@ -295,6 +314,7 @@ final class DictationSessionController {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(200))
                 guard !Task.isCancelled, let self, self.isRecording else { return }
+                BackgroundDictationState.heartbeat()
                 let reachedDurationLimit = Date().timeIntervalSince(startedAt)
                     >= BackgroundDictationState.maximumRecordingDuration
                 if BackgroundDictationState.shouldStop() || reachedDurationLimit {
@@ -305,62 +325,6 @@ final class DictationSessionController {
                 }
             }
         }
-    }
-
-    private func startBackgroundActivity(startedAt: Date) {
-        let state = BackgroundDictationActivityContent.recording(startedAt: startedAt)
-        do {
-            let content = ActivityContent(
-                state: activityState(from: state),
-                staleDate: startedAt.addingTimeInterval(5 * 60)
-            )
-            if #available(iOS 18.0, *) {
-                backgroundActivity = try Activity.request(
-                    attributes: WhisperDictActivityAttributes(),
-                    content: content,
-                    pushType: nil,
-                    style: .standard
-                )
-            } else {
-                backgroundActivity = try Activity.request(
-                    attributes: WhisperDictActivityAttributes(),
-                    content: content,
-                    pushType: nil
-                )
-            }
-            backgroundActivityStartedAt = startedAt
-        } catch {
-            NSLog("WhisperDict Live Activity could not start: \(error.localizedDescription)")
-        }
-    }
-
-    private func updateBackgroundActivity(_ state: BackgroundDictationActivityContentState) async {
-        guard let backgroundActivity else { return }
-        await backgroundActivity.update(
-            ActivityContent(
-                state: activityState(from: state),
-                staleDate: Date().addingTimeInterval(60)
-            )
-        )
-    }
-
-    private func endBackgroundActivity(
-        finalState: BackgroundDictationActivityContentState?,
-        dismissalPolicy: ActivityUIDismissalPolicy
-    ) async {
-        guard let backgroundActivity else { return }
-        let content = finalState.map {
-            ActivityContent(state: activityState(from: $0), staleDate: nil)
-        }
-        await backgroundActivity.end(content, dismissalPolicy: dismissalPolicy)
-        self.backgroundActivity = nil
-        backgroundActivityStartedAt = nil
-    }
-
-    private func activityState(
-        from state: BackgroundDictationActivityContentState
-    ) -> WhisperDictActivityAttributes.ContentState {
-        .init(phase: state.phase, startedAt: state.startedAt)
     }
 
     private func handleMemoryPressure() async {

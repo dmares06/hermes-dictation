@@ -1,22 +1,32 @@
-import SwiftUI
+import AVFoundation
 import MessageUI
+import SwiftUI
 
 struct MessageComposePayload: Identifiable {
     let id = UUID()
     let body: String
+    /// Pre-addresses the compose sheet so dictating into Messages does not
+    /// mean returning to the app and retyping a name. Empty is valid: the
+    /// sheet then opens with the text and an empty To field.
+    var recipients: [String] = []
 }
 
 struct ContentView: View {
     private enum RootTab: Hashable {
         case dictation
+        case notes
         case agent
     }
 
     @Environment(SharedState.self) private var settings
     @Environment(\.scenePhase) private var scenePhase
     @State private var downloadService = ModelDownloadService()
-    @State private var dictation = DictationSessionController()
+    @State private var activityHost: DictationActivityHost
+    @State private var dictation: DictationSessionController
+    @State private var listening: ListeningWindowController
+    @State private var notes = NotesController()
     @State private var agent = VoiceAgentController()
+    @State private var reminderPrefill: String?
     @State private var copiedText = ""
     @State private var selectedTab: RootTab = .dictation
     @State private var messagePayload: MessageComposePayload?
@@ -25,11 +35,24 @@ struct ContentView: View {
         store: BackgroundDictationState.sharedDefaults
     ) private var foregroundToggleRequest = ""
 
+    init() {
+        // One activity host: the window starts the Live Activity while the
+        // app is visible and dictation updates it from the background.
+        let host = DictationActivityHost()
+        _activityHost = State(initialValue: host)
+        _dictation = State(initialValue: DictationSessionController(activityHost: host))
+        _listening = State(initialValue: ListeningWindowController(activityHost: host))
+    }
+
     var body: some View {
         TabView(selection: $selectedTab) {
             dictationView
                 .tag(RootTab.dictation)
                 .tabItem { Label("Dictation", systemImage: "mic.fill") }
+
+            NotesView(controller: notes)
+                .tag(RootTab.notes)
+                .tabItem { Label("Notes", systemImage: "note.text") }
 
             VoiceAgentView(controller: agent, downloadService: downloadService)
                 .tag(RootTab.agent)
@@ -39,6 +62,7 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 handlePendingShortcutToggle()
+                refreshListeningWindow()
                 return
             }
             Task {
@@ -51,10 +75,40 @@ struct ContentView: View {
         .onAppear {
             downloadService.refresh(for: settings.modelSize)
             handlePendingShortcutToggle()
+            wireListeningWindow()
+            refreshListeningWindow()
+            agent.notes = notes
+            agent.emailDelivery = settings.emailDelivery
+        }
+        .onChange(of: settings.emailDelivery) { _, delivery in agent.emailDelivery = delivery }
+        .sheet(item: $reminderPrefill) { text in
+            TranscriptReminderSheet(text: text) { draft in
+                Task { await notes.addReminder(draft) }
+            }
+        }
+        .onChange(of: settings.listeningWindow) { _, _ in refreshListeningWindow() }
+        .onChange(of: agent.conversationActive) { _, active in
+            // The agent configures its own audio session; the two cannot share.
+            if active { listening.deactivate() } else { refreshListeningWindow() }
+        }
+        .onChange(of: downloadService.isPrepared) { _, _ in refreshListeningWindow() }
+        .onChange(of: listening.isListening) { _, isListening in
+            dictation.usesSharedAudioSession = isListening
+        }
+        .onChange(of: dictation.phase) { _, phase in
+            // Every finished dictation restarts the idle clock.
+            if phase == .ready { listening.noteActivity() }
         }
         .onChange(of: foregroundToggleRequest) { _, request in
             guard !request.isEmpty else { return }
             handlePendingShortcutToggle()
+        }
+        .onChange(of: settings.modelSize) { _, model in
+            downloadService.refresh(for: model)
+        }
+        .fullScreenCover(isPresented: onboardingPresented) {
+            OnboardingView(downloadService: downloadService)
+                .environment(settings)
         }
         .onOpenURL { url in
             guard url.scheme == "whisperdict" else { return }
@@ -71,13 +125,42 @@ struct ContentView: View {
             runShortcutToggle()
         }
         .sheet(item: $messagePayload) { payload in
-            MessageComposeView(body: payload.body)
+            MessageComposeView(body: payload.body, recipients: payload.recipients)
         }
     }
 
     private func handlePendingShortcutToggle() {
         guard BackgroundDictationState.consumeForegroundToggleRequest() else { return }
         runShortcutToggle()
+    }
+
+    private func wireListeningWindow() {
+        listening.isBusy = { dictation.isRecording || dictation.isBusy }
+        dictation.sharedAudioEngine = { listening.audioEngine }
+        listening.onCaptureLost = { await dictation.stopIfNeeded(settings: settings) }
+        listening.onStartRequested = {
+            guard downloadService.isPrepared else {
+                BackgroundDictationState.fail("Prepare the speech model in WhisperDict before recording.")
+                return
+            }
+            await dictation.startFromKeyboard(settings: settings)
+        }
+    }
+
+    /// The window only opens once the app can actually record: microphone
+    /// granted and a model on disk. Anything less falls back to launching.
+    private func refreshListeningWindow() {
+        guard downloadService.isPrepared,
+              AVAudioApplication.shared.recordPermission == .granted,
+              !agent.conversationActive
+        else {
+            listening.deactivate()
+            return
+        }
+        listening.activate(duration: settings.listeningWindow)
+        // The window opening is the signal that a dictation is coming, so the
+        // model load happens now rather than after the user stops speaking.
+        Task { await dictation.prewarmModel(settings: settings) }
     }
 
     private func runShortcutToggle() {
@@ -118,8 +201,15 @@ struct ContentView: View {
                             copied: copiedText == dictation.transcript,
                             copyAction: { copy(dictation.transcript) },
                             messageAction: {
-                                messagePayload = MessageComposePayload(body: dictation.transcript)
-                            }
+                                messagePayload = MessageComposePayload(
+                                    body: dictation.transcript,
+                                    recipients: settings.messageRecipients
+                                )
+                            },
+                            noteAction: {
+                                if notes.saveNote(dictation.transcript) != nil { selectedTab = .notes }
+                            },
+                            remindAction: { reminderPrefill = dictation.transcript }
                         )
                     }
 
@@ -160,6 +250,15 @@ struct ContentView: View {
             try? await Task.sleep(for: .seconds(2))
             if copiedText == text { copiedText = "" }
         }
+    }
+
+    private var onboardingPresented: Binding<Bool> {
+        Binding(
+            get: { !settings.welcomeDone },
+            set: { isPresented in
+                if !isPresented { settings.welcomeDone = true }
+            }
+        )
     }
 
 }
@@ -306,6 +405,8 @@ private struct TranscriptCard: View {
     let copied: Bool
     let copyAction: () -> Void
     let messageAction: () -> Void
+    let noteAction: () -> Void
+    let remindAction: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -313,12 +414,17 @@ private struct TranscriptCard: View {
                 Label("Latest transcript", systemImage: "text.quote")
                     .font(.headline)
                 Spacer()
-                HStack(spacing: 12) {
-                    Button("Message", systemImage: "message.fill", action: messageAction)
-                    Button(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc", action: copyAction)
-                }
-                .font(.subheadline.weight(.semibold))
+                Button(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc", action: copyAction)
+                    .font(.subheadline.weight(.semibold))
             }
+            HStack(spacing: 10) {
+                Button("Message", systemImage: "message.fill", action: messageAction)
+                Button("Note", systemImage: "note.text.badge.plus", action: noteAction)
+                Button("Remind", systemImage: "bell.badge", action: remindAction)
+            }
+            .font(.subheadline.weight(.semibold))
+            .buttonStyle(.bordered)
+            .tint(.mint)
             Text(transcript)
                 .font(.body)
                 .textSelection(.enabled)
@@ -336,6 +442,7 @@ private struct TranscriptCard: View {
 
 struct MessageComposeView: UIViewControllerRepresentable {
     let body: String
+    var recipients: [String] = []
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -347,6 +454,9 @@ struct MessageComposeView: UIViewControllerRepresentable {
         }
         let controller = MFMessageComposeViewController()
         controller.body = body
+        if !recipients.isEmpty {
+            controller.recipients = recipients
+        }
         controller.messageComposeDelegate = context.coordinator
         return controller
     }
@@ -361,6 +471,65 @@ struct MessageComposeView: UIViewControllerRepresentable {
             controller.dismiss(animated: true)
         }
     }
+}
+
+/// Turns a dictated sentence into a reminder. The parse is only a starting
+/// point: every field can be changed before anything is added.
+private struct TranscriptReminderSheet: View {
+    let text: String
+    let onAdd: (ReminderDraft) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var title: String
+    @State private var hasDate: Bool
+    @State private var date: Date
+
+    init(text: String, onAdd: @escaping (ReminderDraft) -> Void) {
+        self.text = text
+        self.onAdd = onAdd
+        let parsed = ReminderParser.parse(text)
+        _title = State(initialValue: parsed?.title ?? text.trimmingCharacters(in: .whitespacesAndNewlines))
+        _hasDate = State(initialValue: parsed?.dueDate != nil)
+        _date = State(initialValue: parsed?.dueDate ?? Date().addingTimeInterval(3600))
+    }
+
+    private var trimmedTitle: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("What to remind you about", text: $title, axis: .vertical)
+                } header: {
+                    Text("Reminder")
+                } footer: {
+                    Text("Taken from: \u{201C}\(text)\u{201D}")
+                }
+                Section {
+                    Toggle("Set a time", isOn: $hasDate)
+                    if hasDate {
+                        DatePicker("When", selection: $date)
+                    }
+                }
+            }
+            .navigationTitle("Add reminder")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        onAdd(ReminderDraft(title: trimmedTitle, dueDate: hasDate ? date : nil))
+                        dismiss()
+                    }
+                    .disabled(trimmedTitle.isEmpty || trimmedTitle.count > ReminderDraft.maximumTitleLength)
+                }
+            }
+        }
+    }
+}
+
+extension String: @retroactive Identifiable {
+    public var id: String { self }
 }
 
 private struct HistorySection: View {

@@ -24,6 +24,7 @@ struct VoiceAgentSharePayload: Identifiable {
 final class VoiceAgentController {
     enum Phase: Equatable {
         case ready
+        case connecting
         case recording
         case transcribing
         case speaking
@@ -34,20 +35,38 @@ final class VoiceAgentController {
     private(set) var messages = [
         VoiceAgentMessage(
             role: .hermes,
-            text: "Tell me to send a message, compose an email, create a note, open Gmail, or open Settings."
+            text: "Talk to me naturally. I can have a real conversation, prepare messages, email, and notes, or open supported apps after you approve."
         ),
     ]
     private(set) var audioLevel: Float = 0
     private(set) var elapsedSeconds = 0
     private(set) var session = VoiceAgentSession()
     private(set) var conversationActive = false
+    private(set) var usesRealtime = false
+    private(set) var conversationHistory: [HermesConversation] = []
+    private(set) var usageSummary = HermesUsageSummary(
+        conversationCount: 0,
+        spokenWordCount: 0,
+        totalCapturedWordCount: 0
+    )
     var showsMicrophoneSettings = false
     var sharePayload: VoiceAgentSharePayload?
     var messagePayload: MessageComposePayload?
+    /// Where in-app notes and reminders go; injected by the root view.
+    @ObservationIgnored var notes: NotesController?
+    /// Mirrors Settings; applied to every email the agent prepares.
+    var emailDelivery: EmailDelivery = .mailApp {
+        didSet { session.emailDelivery = emailDelivery }
+    }
+    @ObservationIgnored private let backend = HermesBackendClient()
 
     private let recorder: DictationAudioRecorder
     private let transcriber: DictationTranscriber
     private let speaker = VoiceAgentSpeaker()
+    private let realtimeClient = RealtimeAgentClient()
+    private let conversationStore: HermesConversationStore
+    private let transcriptStore: TranscriptStore
+    private var pendingRealtimeAction: VoiceAgentAction?
     private var turnDetector = VoiceTurnDetector()
     private var conversationID: UUID?
     private var conversationSettings: SharedState?
@@ -57,16 +76,37 @@ final class VoiceAgentController {
 
     init(
         recorder: DictationAudioRecorder = DictationAudioRecorder(),
-        transcriber: DictationTranscriber = DictationTranscriber()
+        transcriber: DictationTranscriber = DictationTranscriber(),
+        conversationStore: HermesConversationStore = HermesConversationStore(),
+        transcriptStore: TranscriptStore = TranscriptStore()
     ) {
         self.recorder = recorder
         self.transcriber = transcriber
+        self.conversationStore = conversationStore
+        self.transcriptStore = transcriptStore
         recorder.onLevel = { [weak self] level in
             Task { @MainActor in self?.handleAudioLevel(level) }
         }
         recorder.onInterruption = { [weak self] in
             Task { @MainActor in await self?.endConversation(announce: false) }
         }
+        realtimeClient.onStateChange = { [weak self] state in
+            self?.handleRealtimeState(state)
+        }
+        realtimeClient.onUserTranscript = { [weak self] transcript in
+            self?.handleRealtimeUserTranscript(transcript)
+        }
+        realtimeClient.onAssistantTranscript = { [weak self] transcript in
+            self?.appendRealtimeMessage(role: .hermes, text: transcript)
+        }
+        realtimeClient.onPreparedAction = { [weak self] prepared in
+            guard let self else { return }
+            self.handleRealtimeAction(RealtimePreparedAction(
+                callID: prepared.callID,
+                action: prepared.action.retargetedEmail(to: self.emailDelivery)
+            ))
+        }
+        refreshHistory()
     }
 
     deinit {
@@ -74,25 +114,56 @@ final class VoiceAgentController {
     }
 
     var isRecording: Bool { phase == .recording }
-    var isBusy: Bool { phase == .transcribing || phase == .speaking }
-    var pendingAction: VoiceAgentAction? { session.pendingAction }
+    var isBusy: Bool { phase == .connecting || phase == .transcribing || phase == .speaking }
+    var pendingAction: VoiceAgentAction? { pendingRealtimeAction ?? session.pendingAction }
+    var canUseOfflineMode: Bool {
+        if case .failed = phase { return !conversationActive }
+        return false
+    }
+    var primaryAction: VoiceAgentPrimaryAction {
+        if usesRealtime && conversationActive { return .finishTurn }
+        return VoiceAgentControlPolicy.primaryAction(
+            conversationActive: conversationActive,
+            recording: isRecording,
+            busy: isBusy
+        )
+    }
 
     var statusText: String {
         switch phase {
         case .ready: conversationActive ? "Ready for your next request" : "Ready for a conversation"
+        case .connecting: "Connecting to Hermes Realtime…"
         case .recording: "Listening — speak naturally…"
         case .transcribing: "Understanding on this iPhone…"
-        case .speaking: "Speaking…"
+        case .speaking: usesRealtime ? "Hermes is responding…" : "Speaking…"
         case .failed(let message): message
         }
     }
 
-    func toggleConversation(settings: SharedState) async {
-        if conversationActive {
+    func performPrimaryAction(settings: SharedState) async {
+        if usesRealtime, conversationActive {
             await endConversation()
-        } else {
-            await startConversation(settings: settings)
+            return
         }
+        switch primaryAction {
+        case .startConversation:
+            await startConversation(settings: settings)
+        case .finishTurn:
+            await finishCurrentTurn(settings: settings)
+        case .wait:
+            return
+        }
+    }
+
+    func finishCurrentTurn(settings: SharedState) async {
+        guard conversationActive,
+              isRecording,
+              !isCompletingTurn,
+              let conversationID
+        else { return }
+
+        isCompletingTurn = true
+        await stopAndProcess(settings: settings, conversationID: conversationID)
     }
 
     func stopIfNeeded(settings: SharedState) async {
@@ -107,6 +178,19 @@ final class VoiceAgentController {
 
     func confirmPending() async {
         guard pendingAction != nil else { return }
+        if let action = pendingRealtimeAction {
+            if let conversationID { try? conversationStore.end(id: conversationID) }
+            pendingRealtimeAction = nil
+            usesRealtime = false
+            conversationActive = false
+            realtimeClient.stop()
+            conversationID = nil
+            conversationSettings = nil
+            refreshHistory()
+            messages.append(VoiceAgentMessage(role: .person, text: "Confirm"))
+            await execute(action)
+            return
+        }
         discardCurrentRecording()
         messages.append(VoiceAgentMessage(role: .person, text: "Confirm"))
         await handle(session.confirm())
@@ -114,6 +198,12 @@ final class VoiceAgentController {
 
     func cancelPending() async {
         guard pendingAction != nil || session.step != .idle else { return }
+        if pendingRealtimeAction != nil {
+            pendingRealtimeAction = nil
+            messages.append(VoiceAgentMessage(role: .person, text: "Cancel"))
+            messages.append(VoiceAgentMessage(role: .hermes, text: "Cancelled. Nothing was opened or shared."))
+            return
+        }
         discardCurrentRecording()
         messages.append(VoiceAgentMessage(role: .person, text: "Cancel"))
         await handle(session.cancel(), resumeConversation: conversationActive)
@@ -125,19 +215,66 @@ final class VoiceAgentController {
     }
 
     private func startConversation(settings: SharedState) async {
+        guard await microphonePermission() else {
+            phase = .failed("Microphone access is off. Enable it in Settings to talk to Hermes.")
+            showsMicrophoneSettings = true
+            return
+        }
+
+        let id = UUID()
         conversationActive = true
-        conversationID = UUID()
+        conversationID = id
         conversationSettings = settings
+        phase = .connecting
+        usesRealtime = true
+        do {
+            try await realtimeClient.start()
+            try? conversationStore.begin(id: id, mode: .realtime)
+            refreshHistory()
+            messages.append(
+                VoiceAgentMessage(
+                    role: .hermes,
+                    text: "Live conversation started. Speak naturally, interrupt me when you need to, or ask me to open a supported app."
+                )
+            )
+            return
+        } catch {
+            realtimeClient.stop()
+            usesRealtime = false
+            conversationActive = false
+            conversationID = nil
+            conversationSettings = nil
+            let message = "\(error.localizedDescription) Offline voice was not started automatically."
+            phase = .failed(message)
+            messages.append(
+                VoiceAgentMessage(
+                    role: .hermes,
+                    text: message
+                )
+            )
+            return
+        }
+    }
+
+    func startOfflineConversation(settings: SharedState) async {
+        guard !conversationActive else { return }
+        let id = UUID()
+        conversationActive = true
+        conversationID = id
+        conversationSettings = settings
+        usesRealtime = false
         guard await startRecording(settings: settings) else {
             conversationActive = false
             conversationID = nil
             conversationSettings = nil
             return
         }
+        try? conversationStore.begin(id: id, mode: .offline)
+        refreshHistory()
         messages.append(
             VoiceAgentMessage(
                 role: .hermes,
-                text: "Conversation started. Speak naturally; I'll answer and listen again automatically."
+                text: "Offline conversation started. This mode transcribes first and uses the iPhone system voice."
             )
         )
     }
@@ -181,7 +318,7 @@ final class VoiceAgentController {
     }
 
     private func stopAndProcess(settings: SharedState, conversationID expectedConversationID: UUID) async {
-        guard let audioURL = recorder.stop() else {
+        guard let samples = recorder.stop() else {
             if isRecording { phase = .failed("The recording was empty. Please try again.") }
             return
         }
@@ -189,7 +326,6 @@ final class VoiceAgentController {
         elapsedTask = nil
         phase = .transcribing
 
-        defer { try? FileManager.default.removeItem(at: audioURL) }
         let modelPath = settings.modelFolderPath
         guard let modelPath else {
             phase = .failed("The speech model is missing. Prepare it again in Dictation.")
@@ -198,7 +334,7 @@ final class VoiceAgentController {
         }
 
         do {
-            let rawText = try await transcriber.transcribe(audioURL: audioURL, modelPath: modelPath)
+            let rawText = try await transcriber.transcribe(samples: samples, modelPath: modelPath)
             guard conversationActive, conversationID == expectedConversationID else { return }
             let collectsProse = session.step.collectsProse
             let options = TranscriptCleanupOptions(
@@ -228,18 +364,22 @@ final class VoiceAgentController {
             return
         }
         messages.append(VoiceAgentMessage(role: .person, text: cleaned))
+        persistTurn(cleaned, role: .person)
         await handle(session.receive(cleaned), resumeConversation: resumeConversation)
     }
 
     private func handle(_ turn: VoiceAgentTurn, resumeConversation: Bool = false) async {
         messages.append(VoiceAgentMessage(role: .hermes, text: turn.assistantMessage))
+        persistTurn(turn.assistantMessage, role: .hermes)
         phase = .speaking
         await speaker.speak(turn.assistantMessage)
         phase = .ready
         if let action = turn.action {
+            if let conversationID { try? conversationStore.end(id: conversationID) }
             conversationActive = false
             conversationID = nil
             conversationSettings = nil
+            refreshHistory()
             await execute(action)
             return
         }
@@ -266,6 +406,7 @@ final class VoiceAgentController {
     }
 
     private func endForIdleTimeout() async {
+        let endingConversationID = conversationID
         discardCurrentRecording()
         conversationActive = false
         conversationID = nil
@@ -275,24 +416,34 @@ final class VoiceAgentController {
         phase = .speaking
         await speaker.speak(message)
         phase = .ready
+        if let endingConversationID {
+            try? conversationStore.end(id: endingConversationID)
+            refreshHistory()
+        }
     }
 
-    private func endConversation(announce: Bool = true) async {
+    func endConversation(announce: Bool = true) async {
         let wasActive = conversationActive || isRecording || isBusy
+        let endingConversationID = conversationID
         conversationActive = false
         conversationID = nil
         conversationSettings = nil
+        pendingRealtimeAction = nil
+        realtimeClient.stop()
+        usesRealtime = false
         speaker.stop()
         discardCurrentRecording()
         phase = .ready
+        if let endingConversationID {
+            try? conversationStore.end(id: endingConversationID)
+            refreshHistory()
+        }
         guard announce, wasActive else { return }
         messages.append(VoiceAgentMessage(role: .hermes, text: "Conversation ended."))
     }
 
     private func discardCurrentRecording() {
-        if let audioURL = recorder.stop() {
-            try? FileManager.default.removeItem(at: audioURL)
-        }
+        _ = recorder.stop()
         elapsedTask?.cancel()
         elapsedTask = nil
         audioLevel = 0
@@ -307,17 +458,149 @@ final class VoiceAgentController {
                 return
             }
             await open(url, failureMessage: "I couldn't open your default mail app. Check that a mail app is configured.")
+        case .sendEmail(let draft):
+            do {
+                _ = try await backend.sendEmail(draft, mode: .send)
+                await announce("Sent to \(draft.recipient).")
+            } catch {
+                await reportHandoffFailure(error.localizedDescription)
+            }
         case .shareNote(let text):
             sharePayload = VoiceAgentSharePayload(text: text)
+        case .saveNote(let text):
+            guard let notes, notes.saveNote(text) != nil else {
+                await reportHandoffFailure(notes?.lastError ?? "I couldn't save the note.")
+                return
+            }
+            await announce("Saved to your notes.")
+        case .createReminder(let draft):
+            guard let notes, await notes.addReminder(draft) != nil else {
+                await reportHandoffFailure(notes?.lastError ?? "I couldn't add the reminder.")
+                return
+            }
+            await announce(draft.dueDate == nil ? "Reminder added." : "Reminder added with an alert.")
         case .composeMessage(let text):
-            messagePayload = MessageComposePayload(body: text)
+            messagePayload = MessageComposePayload(
+                body: text,
+                recipients: conversationSettings?.messageRecipients ?? []
+            )
         case .open(.gmailWeb):
             guard let url = URL(string: "https://mail.google.com/") else { return }
             await open(url, failureMessage: "I couldn't open Gmail in your browser.")
         case .open(.appSettings):
             guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
             await open(url, failureMessage: "I couldn't open Settings.")
+        case .open(.maps):
+            await openDestination("https://maps.apple.com/", name: "Maps")
+        case .open(.calendar):
+            await openDestination("calshow://", name: "Calendar")
+        case .open(.music):
+            await openDestination("music://", name: "Music")
+        case .open(.youtube):
+            await openDestination("https://www.youtube.com/", name: "YouTube")
+        case .open(.spotify):
+            await openDestination("https://open.spotify.com/", name: "Spotify")
+        case .runShortcut(let name):
+            var components = URLComponents()
+            components.scheme = "shortcuts"
+            components.host = "run-shortcut"
+            components.queryItems = [URLQueryItem(name: "name", value: name)]
+            guard let url = components.url else {
+                await reportHandoffFailure("I couldn't create a safe Shortcuts handoff.")
+                return
+            }
+            await open(url, failureMessage: "I couldn't find or run the \(name) shortcut.")
         }
+    }
+
+    private func openDestination(_ value: String, name: String) async {
+        guard let url = URL(string: value) else { return }
+        await open(url, failureMessage: "I couldn't open \(name) on this iPhone.")
+    }
+
+    private func handleRealtimeState(_ state: RealtimeAgentClient.State) {
+        guard usesRealtime || state == .connecting else { return }
+        switch state {
+        case .disconnected:
+            if conversationActive { phase = .failed("The live conversation disconnected. Tap to reconnect.") }
+        case .connecting:
+            phase = .connecting
+        case .listening:
+            phase = .recording
+        case .responding:
+            phase = .speaking
+        case .failed(let message):
+            if let conversationID { try? conversationStore.end(id: conversationID) }
+            realtimeClient.stop()
+            phase = .failed(message)
+            conversationActive = false
+            usesRealtime = false
+            conversationID = nil
+            conversationSettings = nil
+            refreshHistory()
+        }
+    }
+
+    private func handleRealtimeUserTranscript(_ transcript: String) {
+        appendRealtimeMessage(role: .person, text: transcript)
+        guard pendingRealtimeAction != nil,
+              let decision = VoiceAgentApprovalDecision(spoken: transcript)
+        else { return }
+        Task {
+            switch decision {
+            case .confirm:
+                guard let action = pendingRealtimeAction else { return }
+                pendingRealtimeAction = nil
+                realtimeClient.stop()
+                usesRealtime = false
+                conversationActive = false
+                await execute(action)
+            case .cancel:
+                pendingRealtimeAction = nil
+                messages.append(VoiceAgentMessage(role: .hermes, text: "Cancelled. Nothing was opened or shared."))
+            }
+        }
+    }
+
+    private func appendRealtimeMessage(role: VoiceAgentMessage.Role, text: String) {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        messages.append(VoiceAgentMessage(role: role, text: value))
+        persistTurn(value, role: role == .person ? .person : .hermes)
+    }
+
+    func clearConversationHistory() {
+        conversationStore.clear()
+        refreshHistory()
+    }
+
+    private func persistTurn(_ text: String, role: HermesConversationRole) {
+        guard let conversationID else { return }
+        try? conversationStore.append(text, role: role, to: conversationID)
+        refreshHistory()
+    }
+
+    private func refreshHistory() {
+        conversationHistory = conversationStore.history
+        let dictatedWords = transcriptStore.history.reduce(0) {
+            $0 + $1.text.split(whereSeparator: \Character.isWhitespace).count
+        }
+        usageSummary = conversationStore.summary(dictatedWordCount: dictatedWords)
+    }
+
+    private func handleRealtimeAction(_ prepared: RealtimePreparedAction) {
+        guard pendingRealtimeAction == nil else {
+            realtimeClient.completeFunctionCall(
+                id: prepared.callID,
+                output: "Rejected: another action is already waiting for confirmation."
+            )
+            return
+        }
+        pendingRealtimeAction = prepared.action
+        realtimeClient.completeFunctionCall(
+            id: prepared.callID,
+            output: "Prepared for review. Ask the user to say confirm or cancel. Do not claim it has happened."
+        )
     }
 
     private func open(_ url: URL, failureMessage: String) async {
@@ -325,6 +608,13 @@ final class VoiceAgentController {
         if !opened {
             await reportHandoffFailure(failureMessage)
         }
+    }
+
+    private func announce(_ message: String) async {
+        messages.append(VoiceAgentMessage(role: .hermes, text: message))
+        phase = .speaking
+        await speaker.speak(message)
+        phase = .ready
     }
 
     private func reportHandoffFailure(_ message: String) async {
@@ -380,14 +670,33 @@ private final class VoiceAgentSpeaker: NSObject, AVSpeechSynthesizerDelegate {
             NSLog("WhisperDict speech audio setup failed: \(error.localizedDescription)")
         }
         let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        utterance.voice = AVSpeechSynthesisVoice(language: Locale.current.language.languageCode?.identifier ?? "en-US")
+        let language = Locale.current.identifier.replacingOccurrences(of: "_", with: "-")
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.92
+        utterance.pitchMultiplier = 0.98
+        utterance.voice = Self.preferredVoice(for: language)
         self.utterance = utterance
 
         await withCheckedContinuation { continuation in
             self.continuation = continuation
             synthesizer.speak(utterance)
         }
+    }
+
+    private static func preferredVoice(for language: String) -> AVSpeechSynthesisVoice? {
+        let requestedLanguage = Locale(identifier: language).language.languageCode?.identifier
+        let matchingVoices = AVSpeechSynthesisVoice.speechVoices().filter { voice in
+            voice.language == language
+                || Locale(identifier: voice.language).language.languageCode?.identifier == requestedLanguage
+        }
+
+        return matchingVoices.max { lhs, rhs in
+            voiceScore(lhs, requestedLanguage: language) < voiceScore(rhs, requestedLanguage: language)
+        } ?? AVSpeechSynthesisVoice(language: language)
+    }
+
+    private static func voiceScore(_ voice: AVSpeechSynthesisVoice, requestedLanguage: String) -> Int {
+        let localeBonus = voice.language == requestedLanguage ? 10 : 0
+        return voice.quality.rawValue * 100 + localeBonus
     }
 
     func stop() {

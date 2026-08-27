@@ -14,6 +14,7 @@ struct VoiceAgentView: View {
                 ScrollView {
                     LazyVStack(spacing: 16) {
                         AgentBoundaryCard()
+                        HermesUsageCard(summary: controller.usageSummary)
                         conversation
 
                         if let action = controller.pendingAction {
@@ -24,7 +25,7 @@ struct VoiceAgentView: View {
                             )
                         }
 
-                        if !downloadService.isPrepared {
+                        if !downloadService.isPrepared && !controller.usesRealtime {
                             AgentModelCard(service: downloadService, model: settings.modelSize)
                         }
 
@@ -32,10 +33,19 @@ struct VoiceAgentView: View {
                             controller: controller,
                             modelReady: downloadService.isPrepared,
                             color: settings.recordButtonColor,
-                            action: { Task { await controller.toggleConversation(settings: settings) } }
+                            action: { Task { await controller.performPrimaryAction(settings: settings) } },
+                            startOffline: { Task { await controller.startOfflineConversation(settings: settings) } },
+                            endConversation: { Task { await controller.endConversation() } }
                         )
 
                         QuickRequests(controller: controller)
+
+                        if !controller.conversationHistory.isEmpty {
+                            AgentHistoryCard(
+                                conversations: controller.conversationHistory,
+                                clear: controller.clearConversationHistory
+                            )
+                        }
                     }
                     .padding()
                 }
@@ -63,7 +73,7 @@ struct VoiceAgentView: View {
                 ActivityView(items: [payload.text])
             }
             .sheet(item: $controller.messagePayload) { payload in
-                MessageComposeView(body: payload.body)
+                MessageComposeView(body: payload.body, recipients: payload.recipients)
             }
         }
     }
@@ -116,6 +126,8 @@ private struct AgentRecordingCard: View {
     let modelReady: Bool
     let color: AppearanceColor
     let action: () -> Void
+    let startOffline: () -> Void
+    let endConversation: () -> Void
 
     var body: some View {
         VStack(spacing: 14) {
@@ -141,19 +153,31 @@ private struct AgentRecordingCard: View {
                         .fill(buttonColor)
                         .frame(width: 96, height: 96)
                         .shadow(color: buttonColor.opacity(0.25), radius: 16, y: 7)
-                    if controller.isBusy && !controller.conversationActive {
+                    if controller.isBusy && !(controller.usesRealtime && controller.conversationActive) {
                         ProgressView().tint(buttonForeground).scaleEffect(1.3)
                     } else {
-                        Image(systemName: controller.conversationActive ? "stop.fill" : "waveform.and.mic")
+                        Image(systemName: primaryIcon)
                             .font(.system(size: 34, weight: .semibold))
                             .foregroundStyle(buttonForeground)
                     }
                 }
             }
             .buttonStyle(.plain)
-            .disabled(!modelReady && !controller.conversationActive)
-            .accessibilityLabel(controller.conversationActive ? "End conversation" : "Start conversation")
-            .accessibilityHint("Starts or ends private hands-free turn taking with Hermes")
+            .disabled(controller.primaryAction == .wait)
+            .accessibilityLabel(primaryAccessibilityLabel)
+            .accessibilityHint(primaryAccessibilityHint)
+
+            if controller.conversationActive && !controller.usesRealtime {
+                Button("End conversation", role: .destructive, action: endConversation)
+                    .buttonStyle(.bordered)
+                    .accessibilityHint("Ends the conversation without sending an unfinished recording")
+            }
+
+            if controller.canUseOfflineMode {
+                Button("Use slower offline voice", action: startOffline)
+                    .buttonStyle(.bordered)
+                    .accessibilityHint("Starts local transcription and the iPhone system voice instead of Realtime audio")
+            }
 
             Text(instructionText)
                 .font(.footnote)
@@ -181,15 +205,106 @@ private struct AgentRecordingCard: View {
 
     private var instructionText: String {
         guard controller.conversationActive else {
-            return "Tap once, speak naturally, and Hermes will keep the conversation going"
+            return "Tap once for a low-latency, natural voice conversation"
         }
         switch controller.phase {
-        case .recording: return "Listening now — pause when your turn is finished"
+        case .connecting: return "Creating a secure live audio session…"
+        case .recording:
+            return controller.usesRealtime
+                ? "Speak naturally. You can interrupt Hermes; tap the red button to end."
+                : "Pause when finished, or tap the checkmark to send this turn now"
         case .transcribing: return "Understanding your request…"
         case .speaking: return "Hermes will listen again after speaking"
         case .ready: return "Getting ready to listen again…"
-        case .failed: return "Tap Stop, then start a new conversation"
+        case .failed: return "End the conversation, then try again"
         }
+    }
+
+    private var primaryIcon: String {
+        if controller.usesRealtime && controller.conversationActive { return "phone.down.fill" }
+        return controller.isRecording ? "checkmark" : "waveform.and.mic"
+    }
+
+    private var primaryAccessibilityLabel: String {
+        if controller.usesRealtime && controller.conversationActive { return "End live conversation" }
+        return controller.isRecording ? "Finish speaking" : "Start conversation"
+    }
+
+    private var primaryAccessibilityHint: String {
+        if controller.usesRealtime && controller.conversationActive {
+            return "Disconnects the Realtime voice conversation"
+        }
+        return controller.isRecording
+            ? "Stops this recording and sends it to Hermes"
+            : "Starts private hands-free turn taking with Hermes"
+    }
+}
+
+private struct HermesUsageCard: View {
+    let summary: HermesUsageSummary
+
+    var body: some View {
+        HStack(spacing: 8) {
+            metric("Conversations", value: summary.conversationCount)
+            Divider()
+            metric("Words spoken", value: summary.spokenWordCount)
+            Divider()
+            metric("Words captured", value: summary.totalCapturedWordCount)
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(.background, in: RoundedRectangle(cornerRadius: 18))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func metric(_ title: String, value: Int) -> some View {
+        VStack(spacing: 4) {
+            Text(value.formatted())
+                .font(.headline.monospacedDigit())
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct AgentHistoryCard: View {
+    let conversations: [HermesConversation]
+    let clear: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Conversation history", systemImage: "clock.arrow.circlepath")
+                    .font(.headline)
+                Spacer()
+                Button("Clear", role: .destructive, action: clear)
+                    .font(.caption)
+            }
+
+            ForEach(Array(conversations.prefix(5))) { conversation in
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack {
+                        Text(conversation.startedAt, style: .relative)
+                            .font(.caption.weight(.semibold))
+                        Spacer()
+                        Text(conversation.mode == .realtime ? "Realtime" : "Offline")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(conversation.turns.last?.text ?? "No spoken turns")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                if conversation.id != conversations.prefix(5).last?.id { Divider() }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(.background, in: RoundedRectangle(cornerRadius: 18))
     }
 }
 
@@ -246,18 +361,35 @@ private struct PendingActionCard: View {
     @ViewBuilder
     private var actionDetails: some View {
         switch action {
-        case .composeEmail(let draft):
+        case .composeEmail(let draft), .sendEmail(let draft):
             detail("To", draft.recipient)
             detail("Subject", draft.subject)
             detail("Body", draft.body)
         case .shareNote(let text):
             detail("Note", text)
+        case .saveNote(let text):
+            detail("Note", text)
+        case .createReminder(let draft):
+            detail("Reminder", draft.title)
+            detail("When", draft.dueDate?.formatted(date: .abbreviated, time: .shortened) ?? "No time")
         case .composeMessage(let text):
             detail("Message", text)
         case .open(.gmailWeb):
             detail("Destination", "Gmail in your browser")
         case .open(.appSettings):
             detail("Destination", "WhisperDict Settings")
+        case .open(.maps):
+            detail("Destination", "Apple Maps")
+        case .open(.calendar):
+            detail("Destination", "Calendar")
+        case .open(.music):
+            detail("Destination", "Apple Music")
+        case .open(.youtube):
+            detail("Destination", "YouTube")
+        case .open(.spotify):
+            detail("Destination", "Spotify")
+        case .runShortcut(let name):
+            detail("Shortcut", name)
         }
     }
 
@@ -271,10 +403,19 @@ private struct PendingActionCard: View {
     private var confirmTitle: String {
         switch action {
         case .composeEmail: "Open email draft"
+        case .sendEmail: "Send with Gmail"
         case .shareNote: "Share note"
+        case .saveNote: "Save note"
+        case .createReminder: "Add reminder"
         case .composeMessage: "Open message draft"
         case .open(.gmailWeb): "Open Gmail"
         case .open(.appSettings): "Open Settings"
+        case .open(.maps): "Open Maps"
+        case .open(.calendar): "Open Calendar"
+        case .open(.music): "Open Music"
+        case .open(.youtube): "Open YouTube"
+        case .open(.spotify): "Open Spotify"
+        case .runShortcut: "Run Shortcut"
         }
     }
 }
@@ -305,6 +446,7 @@ private struct QuickRequests: View {
         quickButton("Create note", request: "Create a note")
         quickButton("Send message", request: "Send a message")
         quickButton("Open Gmail", request: "Open Gmail")
+        quickButton("Open Maps", request: "Open Maps")
     }
 
     private func quickButton(_ title: String, request: String) -> some View {
@@ -326,9 +468,9 @@ private struct AgentModelCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Prepare speech first", systemImage: "arrow.down.circle")
+            Label("Prepare offline fallback", systemImage: "arrow.down.circle")
                 .font(.headline)
-            Text("Hermes uses the same private on-device \(model.title) model as Dictation.")
+            Text("Optional offline fallback: Hermes can use the private on-device \(model.title) model when Realtime is unavailable.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             if service.isPreparing {

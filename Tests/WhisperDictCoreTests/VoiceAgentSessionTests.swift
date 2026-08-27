@@ -2,6 +2,39 @@ import XCTest
 @testable import WhisperDictCore
 
 final class VoiceAgentSessionTests: XCTestCase {
+    func testPrimaryControlFinishesRecordingInsteadOfEndingConversation() {
+        XCTAssertEqual(
+            VoiceAgentControlPolicy.primaryAction(
+                conversationActive: true,
+                recording: true,
+                busy: false
+            ),
+            .finishTurn
+        )
+    }
+
+    func testPrimaryControlWaitsWhileAgentProcessesOrSpeaks() {
+        XCTAssertEqual(
+            VoiceAgentControlPolicy.primaryAction(
+                conversationActive: true,
+                recording: false,
+                busy: true
+            ),
+            .wait
+        )
+    }
+
+    func testPrimaryControlStartsOnlyWhenConversationIsInactive() {
+        XCTAssertEqual(
+            VoiceAgentControlPolicy.primaryAction(
+                conversationActive: false,
+                recording: false,
+                busy: false
+            ),
+            .startConversation
+        )
+    }
+
     func testEmailJourneyCollectsFieldsAndCreatesReviewableDraft() {
         var session = VoiceAgentSession()
 
@@ -94,15 +127,16 @@ final class VoiceAgentSessionTests: XCTestCase {
         XCTAssertTrue(response.assistantMessage.contains("too long"))
     }
 
-    func testNoteJourneyRequiresReviewBeforeSharing() {
+    func testNoteJourneyRequiresReviewBeforeSaving() {
         var session = VoiceAgentSession()
         XCTAssertEqual(session.receive("Create a new note").assistantMessage, "What should the note say?")
 
         let review = session.receive("Pick up medicine at five.")
 
-        XCTAssertEqual(session.pendingAction, .shareNote("Pick up medicine at five."))
+        // Notes now live inside Hermes; Apple Notes is only used when asked for by name.
+        XCTAssertEqual(session.pendingAction, .saveNote("Pick up medicine at five."))
         XCTAssertNil(review.action)
-        XCTAssertTrue(review.assistantMessage.contains("share sheet"))
+        XCTAssertTrue(review.assistantMessage.contains("save it in Hermes"))
     }
 
     func testOpenNotesRequestUsesSafeNoteFlowInsteadOfPrivateDeepLink() {
@@ -186,6 +220,80 @@ final class VoiceAgentSessionTests: XCTestCase {
 
         XCTAssertEqual(session.pendingAction, .open(.appSettings))
         XCTAssertNil(proposed.action)
+    }
+
+    func testSupportedAppRequestsStayReviewableInOfflineMode() {
+        let requests: [(String, VoiceAgentDestination)] = [
+            ("Open Maps", .maps),
+            ("Show my calendar", .calendar),
+            ("Open Apple Music", .music),
+            ("Go to YouTube", .youtube),
+            ("Open Spotify", .spotify),
+        ]
+
+        for (request, destination) in requests {
+            var session = VoiceAgentSession()
+            let proposed = session.receive(request)
+            XCTAssertNil(proposed.action)
+            XCTAssertEqual(session.pendingAction, .open(destination))
+        }
+    }
+
+    func testRealtimeActionsAreValidatedBeforeTheyCanBeReviewed() {
+        XCTAssertEqual(
+            VoiceAgentAction.validatedMessage("  Meet me at six.  "),
+            .composeMessage("Meet me at six.")
+        )
+        XCTAssertNil(VoiceAgentAction.validatedMessage(String(repeating: "a", count: VoiceAgentLimits.message + 1)))
+
+        XCTAssertEqual(
+            VoiceAgentAction.validatedEmail(
+                recipient: "alex at example dot com",
+                subject: " Update ",
+                body: " The build is ready. "
+            ),
+            .composeEmail(EmailDraft(
+                recipient: "alex@example.com",
+                subject: "Update",
+                body: "The build is ready."
+            ))
+        )
+        XCTAssertNil(VoiceAgentAction.validatedEmail(
+            recipient: "alex@example.com?subject=injected",
+            subject: "Update",
+            body: "Body"
+        ))
+    }
+
+    func testRealtimeNoteAndDestinationValidationUseClosedAllowlist() {
+        XCTAssertEqual(
+            VoiceAgentAction.validatedNote("  Buy milk.  "),
+            .shareNote("Buy milk.")
+        )
+        XCTAssertNil(VoiceAgentAction.validatedNote(String(repeating: "a", count: VoiceAgentLimits.note + 1)))
+
+        XCTAssertEqual(VoiceAgentAction.validatedDestination("maps"), .open(.maps))
+        XCTAssertEqual(VoiceAgentAction.validatedDestination("calendar"), .open(.calendar))
+        XCTAssertEqual(VoiceAgentAction.validatedDestination("music"), .open(.music))
+        XCTAssertEqual(VoiceAgentAction.validatedDestination("youtube"), .open(.youtube))
+        XCTAssertEqual(VoiceAgentAction.validatedDestination("spotify"), .open(.spotify))
+        XCTAssertNil(VoiceAgentAction.validatedDestination("arbitrary-url"))
+
+        XCTAssertEqual(
+            VoiceAgentAction.validatedShortcut("  Drive Home  "),
+            .runShortcut("Drive Home")
+        )
+        XCTAssertNil(VoiceAgentAction.validatedShortcut(""))
+        XCTAssertNil(VoiceAgentAction.validatedShortcut(String(repeating: "a", count: VoiceAgentLimits.shortcutName + 1)))
+    }
+
+    func testSpokenApprovalRequiresAnUnambiguousStandaloneDecision() {
+        XCTAssertEqual(VoiceAgentApprovalDecision(spoken: "confirm"), .confirm)
+        XCTAssertEqual(VoiceAgentApprovalDecision(spoken: "Yes, open it"), .confirm)
+        XCTAssertEqual(VoiceAgentApprovalDecision(spoken: "cancel"), .cancel)
+        XCTAssertEqual(VoiceAgentApprovalDecision(spoken: "No, don't open it"), .cancel)
+        XCTAssertNil(VoiceAgentApprovalDecision(spoken: "tell me what confirm means"))
+        XCTAssertNil(VoiceAgentApprovalDecision(spoken: "do not confirm"))
     }
 
     func testUnsupportedCommandDoesNotGuessAnAction() {

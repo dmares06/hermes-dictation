@@ -69,14 +69,26 @@ final class VoiceTurnDetectorTests: XCTestCase {
         XCTAssertEqual(detector.observe(level: 0.01, at: 11.6), .finishTurn)
     }
 
-    func testDefaultDetectorTreatsQuietRoomNoiseAsSilenceAfterSpeech() {
+    func testDefaultDetectorAllowsANaturalPauseBeforeFinishing() {
         var detector = VoiceTurnDetector()
         detector.reset(at: 0)
 
         XCTAssertEqual(detector.observe(level: 0.55, at: 0.2), .listening)
         XCTAssertEqual(detector.observe(level: 0.50, at: 0.6), .listening)
         XCTAssertEqual(detector.observe(level: 0.12, at: 1.0), .listening)
-        XCTAssertEqual(detector.observe(level: 0.12, at: 1.7), .finishTurn)
+        XCTAssertEqual(detector.observe(level: 0.02, at: 2.5), .listening)
+        XCTAssertEqual(detector.observe(level: 0.02, at: 3.25), .finishTurn)
+    }
+
+    func testDefaultDetectorDoesNotCutOffALongerSpokenTurn() {
+        var detector = VoiceTurnDetector()
+        detector.reset(at: 0)
+
+        XCTAssertEqual(detector.observe(level: 0.50, at: 0.2), .listening)
+        XCTAssertEqual(detector.observe(level: 0.50, at: 0.8), .listening)
+        XCTAssertEqual(detector.observe(level: 0.50, at: 30), .listening)
+        XCTAssertEqual(detector.observe(level: 0.50, at: 90), .listening)
+        XCTAssertEqual(detector.observe(level: 0.50, at: 120), .finishTurn)
     }
 
     func testMaximumTurnDurationPreventsEndlessListeningInConstantNoise() {

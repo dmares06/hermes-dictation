@@ -15,11 +15,11 @@ public struct VoiceTurnDetector: Sendable {
         public let maximumTurnDuration: TimeInterval
 
         public init(
-            speechThreshold: Float = 0.18,
+            speechThreshold: Float = 0.12,
             minimumSpeechDuration: TimeInterval = 0.30,
-            endSilenceDuration: TimeInterval = 1.10,
-            idleTimeout: TimeInterval = 45,
-            maximumTurnDuration: TimeInterval = 20
+            endSilenceDuration: TimeInterval = 2.25,
+            idleTimeout: TimeInterval = 60,
+            maximumTurnDuration: TimeInterval = 120
         ) {
             self.speechThreshold = max(0, min(speechThreshold, 1))
             self.minimumSpeechDuration = max(0, minimumSpeechDuration)

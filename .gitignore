@@ -8,3 +8,12 @@ dist/
 .build/
 xcuserdata/
 *.xcuserstate
+.collaborator
+
+# Secrets and deploy metadata anywhere in the tree — belt and braces for
+# branches that lack a subdirectory .gitignore.
+**/.env
+**/.env.*
+!**/.env.example
+**/.vercel/
+**/node_modules/

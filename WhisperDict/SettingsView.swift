@@ -15,6 +15,42 @@ struct SettingsView: View {
                 Toggle("Auto-punctuate", isOn: Bindable(state).autoPunctuate)
                 Toggle("Auto-capitalize", isOn: Bindable(state).autoCapitalize)
             }
+            Section {
+                Picker("Keep listening for", selection: Bindable(state).listeningWindow) {
+                    ForEach(ListeningWindowDuration.allCases) { duration in
+                        Text(duration.title).tag(duration)
+                    }
+                }
+            } header: {
+                Text("Background listening")
+            } footer: {
+                Text("After you use WhisperDict, it keeps the microphone open in the background for this long so the keyboard's Talk button, the Action Button, and the Live Activity can start a recording without leaving the app you are in. The orange microphone indicator stays on while it is listening; nothing is saved between dictations. Uses some battery while active.")
+            }
+            Section {
+                Picker("Email", selection: Bindable(state).emailDelivery) {
+                    ForEach(EmailDelivery.allCases) { delivery in
+                        Text(delivery.title).tag(delivery)
+                    }
+                }
+            } header: {
+                Text("Agent email")
+            } footer: {
+                Text("Send with Gmail delivers through your own Gmail account via the Hermes backend, after you confirm each message. Requires the Gmail connection to be set up on the backend.")
+            }
+            Section {
+                TextField(
+                    "Phone number or email",
+                    text: Bindable(state).defaultMessageRecipient
+                )
+                .textContentType(.telephoneNumber)
+                .keyboardType(.namePhonePad)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+            } header: {
+                Text("Messages")
+            } footer: {
+                Text("Pre-addresses the message sheet so dictation goes straight to one person. Leave empty to choose a recipient each time.")
+            }
             Section("Appearance") {
                 ColorPicker("Keyboard color", selection: keyboardColor, supportsOpacity: false)
                 ColorPicker("Record button color", selection: recordButtonColor, supportsOpacity: false)
@@ -27,6 +63,14 @@ struct SettingsView: View {
             Section("Privacy") {
                 Label("Audio is processed on this device.", systemImage: "lock.shield")
                 Text("WhisperDict does not send your dictated audio to a server.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Setup") {
+                Button("Run setup again") {
+                    state.welcomeDone = false
+                }
+                Text("Review microphone, speech model, keyboard, and Action Button setup.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

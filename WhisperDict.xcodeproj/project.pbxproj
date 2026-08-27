@@ -39,6 +39,28 @@
 		B20000000000000000000006 /* Activity WhisperDictActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000012 /* WhisperDictActivityAttributes.swift */; };
 		B20000000000000000000007 /* BackgroundDictationIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000013 /* BackgroundDictationIntent.swift */; };
 		B20000000000000000000008 /* WhisperDictLiveActivityBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000014 /* WhisperDictLiveActivityBundle.swift */; };
+		B40000000000000000000001 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40000000000000000000011 /* OnboardingView.swift */; };
+		B50000000000000000000001 /* KeyboardTextProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B50000000000000000000011 /* KeyboardTextProcessor.swift */; };
+		D60000000000000000000001 /* HermesBackendClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000011 /* HermesBackendClient.swift */; };
+		D50000000000000000000001 /* NotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000011 /* NotesView.swift */; };
+		D40000000000000000000001 /* NotesController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000000000000000000011 /* NotesController.swift */; };
+		D30000000000000000000001 /* ReminderService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000011 /* ReminderService.swift */; };
+		D20000000000000000000001 /* ReminderDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000011 /* ReminderDraft.swift */; };
+		D10000000000000000000001 /* NoteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000011 /* NoteStore.swift */; };
+		C50000000000000000000001 /* ListeningWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000011 /* ListeningWindowController.swift */; };
+		C40000000000000000000001 /* DictationActivityHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40000000000000000000011 /* DictationActivityHost.swift */; };
+		C30000000000000000000001 /* ResidentAudioKeepalive.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30000000000000000000011 /* ResidentAudioKeepalive.swift */; };
+		C20000000000000000000003 /* Activity DictationSignal.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000011 /* DictationSignal.swift */; };
+		C20000000000000000000002 /* Keyboard DictationSignal.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000011 /* DictationSignal.swift */; };
+		C20000000000000000000001 /* DictationSignal.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000011 /* DictationSignal.swift */; };
+		C10000000000000000000003 /* Activity ListeningWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000011 /* ListeningWindow.swift */; };
+		C10000000000000000000002 /* Keyboard ListeningWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000011 /* ListeningWindow.swift */; };
+		C10000000000000000000001 /* ListeningWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000011 /* ListeningWindow.swift */; };
+		B80000000000000000000001 /* MessageRecipients.swift in Sources */ = {isa = PBXBuildFile; fileRef = B80000000000000000000011 /* MessageRecipients.swift */; };
+		B60000000000000000000001 /* RealtimeAgentClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60000000000000000000011 /* RealtimeAgentClient.swift */; };
+		BD0000000000000000000001 /* DictationLatencyLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD0000000000000000000011 /* DictationLatencyLog.swift */; };
+		B60000000000000000000002 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = B60000000000000000000031 /* WebRTC */; };
+		B70000000000000000000001 /* HermesConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B70000000000000000000011 /* HermesConversationStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -107,6 +129,23 @@
 		B20000000000000000000014 /* WhisperDictLiveActivityBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperDictLiveActivityBundle.swift; sourceTree = "<group>"; };
 		B20000000000000000000015 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B20000000000000000000016 /* WhisperDictLiveActivity.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WhisperDictLiveActivity.entitlements; sourceTree = "<group>"; };
+		B40000000000000000000011 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		D60000000000000000000011 /* HermesBackendClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesBackendClient.swift; sourceTree = "<group>"; };
+		D50000000000000000000011 /* NotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesView.swift; sourceTree = "<group>"; };
+		D40000000000000000000011 /* NotesController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesController.swift; sourceTree = "<group>"; };
+		D30000000000000000000011 /* ReminderService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderService.swift; sourceTree = "<group>"; };
+		C50000000000000000000011 /* ListeningWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningWindowController.swift; sourceTree = "<group>"; };
+		C40000000000000000000011 /* DictationActivityHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationActivityHost.swift; sourceTree = "<group>"; };
+		C30000000000000000000011 /* ResidentAudioKeepalive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResidentAudioKeepalive.swift; sourceTree = "<group>"; };
+		B50000000000000000000011 /* KeyboardTextProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardTextProcessor.swift; sourceTree = "<group>"; };
+		D20000000000000000000011 /* ReminderDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderDraft.swift; sourceTree = "<group>"; };
+		D10000000000000000000011 /* NoteStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteStore.swift; sourceTree = "<group>"; };
+		C20000000000000000000011 /* DictationSignal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationSignal.swift; sourceTree = "<group>"; };
+		C10000000000000000000011 /* ListeningWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningWindow.swift; sourceTree = "<group>"; };
+		B80000000000000000000011 /* MessageRecipients.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageRecipients.swift; sourceTree = "<group>"; };
+		B60000000000000000000011 /* RealtimeAgentClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeAgentClient.swift; sourceTree = "<group>"; };
+		BD0000000000000000000011 /* DictationLatencyLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationLatencyLog.swift; sourceTree = "<group>"; };
+		B70000000000000000000011 /* HermesConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesConversationStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -115,6 +154,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000003 /* WhisperKit in Frameworks */,
+				B60000000000000000000002 /* WebRTC in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -149,7 +189,17 @@
 				A10000000000000000000052 /* DictationTranscriber.swift */,
 				A1000000000000000000006C /* VoiceAgentController.swift */,
 				A1000000000000000000006D /* VoiceAgentView.swift */,
+				B60000000000000000000011 /* RealtimeAgentClient.swift */,
+				BD0000000000000000000011 /* DictationLatencyLog.swift */,
 				B20000000000000000000013 /* BackgroundDictationIntent.swift */,
+				B40000000000000000000011 /* OnboardingView.swift */,
+				D60000000000000000000011 /* HermesBackendClient.swift */,
+				D50000000000000000000011 /* NotesView.swift */,
+				D40000000000000000000011 /* NotesController.swift */,
+				D30000000000000000000011 /* ReminderService.swift */,
+				C50000000000000000000011 /* ListeningWindowController.swift */,
+				C40000000000000000000011 /* DictationActivityHost.swift */,
+				C30000000000000000000011 /* ResidentAudioKeepalive.swift */,
 				A10000000000000000000013 /* Info.plist */,
 				A10000000000000000000014 /* WhisperDict.entitlements */,
 				A10000000000000000000045 /* Assets.xcassets */,
@@ -182,10 +232,17 @@
 		A10000000000000000000063 /* WhisperDictCore */ = {
 			isa = PBXGroup;
 			children = (
+				B70000000000000000000011 /* HermesConversationStore.swift */,
 				A10000000000000000000065 /* AppearanceSettings.swift */,
 				A10000000000000000000053 /* TranscriptCleaner.swift */,
 				A10000000000000000000054 /* TranscriptStore.swift */,
 				A10000000000000000000055 /* KeyboardLayout.swift */,
+				B50000000000000000000011 /* KeyboardTextProcessor.swift */,
+				D20000000000000000000011 /* ReminderDraft.swift */,
+				D10000000000000000000011 /* NoteStore.swift */,
+				C20000000000000000000011 /* DictationSignal.swift */,
+				C10000000000000000000011 /* ListeningWindow.swift */,
+				B80000000000000000000011 /* MessageRecipients.swift */,
 				A1000000000000000000006B /* VoiceAgentSession.swift */,
 				A1000000000000000000006F /* VoiceTurnDetector.swift */,
 				B20000000000000000000011 /* BackgroundDictationState.swift */,
@@ -254,6 +311,7 @@
 			name = WhisperDict;
 			packageProductDependencies = (
 				A10000000000000000000004 /* WhisperKit */,
+				B60000000000000000000031 /* WebRTC */,
 			);
 			productName = WhisperDict;
 			productReference = A1000000000000000000000B /* WhisperDict.app */;
@@ -310,6 +368,7 @@
 			mainGroup = A1000000000000000000001E;
 			packageReferences = (
 				A10000000000000000000029 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */,
+				B60000000000000000000021 /* XCRemoteSwiftPackageReference "WebRTC" */,
 			);
 			productRefGroup = A1000000000000000000001F /* Products */;
 			projectDirPath = "";
@@ -352,6 +411,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B70000000000000000000001 /* HermesConversationStore.swift in Sources */,
 				A1000000000000000000002A /* WhisperDictApp.swift in Sources */,
 				A1000000000000000000002B /* ContentView.swift in Sources */,
 				A1000000000000000000002C /* SharedState.swift in Sources */,
@@ -367,10 +427,25 @@
 				A10000000000000000000068 /* VoiceAgentSession.swift in Sources */,
 				A10000000000000000000069 /* VoiceAgentController.swift in Sources */,
 				A1000000000000000000006A /* VoiceAgentView.swift in Sources */,
+				B60000000000000000000001 /* RealtimeAgentClient.swift in Sources */,
+				BD0000000000000000000001 /* DictationLatencyLog.swift in Sources */,
 				A1000000000000000000006E /* VoiceTurnDetector.swift in Sources */,
 				B20000000000000000000002 /* BackgroundDictationState.swift in Sources */,
 				B20000000000000000000005 /* WhisperDictActivityAttributes.swift in Sources */,
 				B20000000000000000000007 /* BackgroundDictationIntent.swift in Sources */,
+				B40000000000000000000001 /* OnboardingView.swift in Sources */,
+				D60000000000000000000001 /* HermesBackendClient.swift in Sources */,
+				D50000000000000000000001 /* NotesView.swift in Sources */,
+				D40000000000000000000001 /* NotesController.swift in Sources */,
+				D30000000000000000000001 /* ReminderService.swift in Sources */,
+				D20000000000000000000001 /* ReminderDraft.swift in Sources */,
+				D10000000000000000000001 /* NoteStore.swift in Sources */,
+				C50000000000000000000001 /* ListeningWindowController.swift in Sources */,
+				C40000000000000000000001 /* DictationActivityHost.swift in Sources */,
+				C30000000000000000000001 /* ResidentAudioKeepalive.swift in Sources */,
+				C20000000000000000000001 /* DictationSignal.swift in Sources */,
+				C10000000000000000000001 /* ListeningWindow.swift in Sources */,
+				B80000000000000000000001 /* MessageRecipients.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -382,8 +457,11 @@
 				A10000000000000000000032 /* KeyboardView.swift in Sources */,
 				A10000000000000000000061 /* Keyboard TranscriptStore.swift in Sources */,
 				A10000000000000000000062 /* KeyboardLayout.swift in Sources */,
+				B50000000000000000000001 /* KeyboardTextProcessor.swift in Sources */,
 				A10000000000000000000067 /* Keyboard AppearanceSettings.swift in Sources */,
 				B20000000000000000000003 /* Keyboard BackgroundDictationState.swift in Sources */,
+				C20000000000000000000002 /* Keyboard DictationSignal.swift in Sources */,
+				C10000000000000000000002 /* Keyboard ListeningWindow.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -392,6 +470,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				B20000000000000000000004 /* Activity BackgroundDictationState.swift in Sources */,
+				C20000000000000000000003 /* Activity DictationSignal.swift in Sources */,
+				C10000000000000000000003 /* Activity ListeningWindow.swift in Sources */,
 				B20000000000000000000006 /* Activity WhisperDictActivityAttributes.swift in Sources */,
 				B20000000000000000000008 /* WhisperDictLiveActivityBundle.swift in Sources */,
 			);
@@ -442,6 +522,10 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WhisperDict/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.dmares06.whisperdict;
 				PRODUCT_NAME = WhisperDict;
 				SDKROOT = iphoneos;
@@ -461,6 +545,10 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WhisperDict/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.dmares06.whisperdict;
 				PRODUCT_NAME = WhisperDict;
 				SDKROOT = iphoneos;
@@ -589,6 +677,14 @@
 				minimumVersion = 1.0.0;
 			};
 		};
+		B60000000000000000000021 /* XCRemoteSwiftPackageReference "WebRTC" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stasel/WebRTC.git";
+			requirement = {
+				kind = exactVersion;
+				version = 151.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -596,6 +692,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A10000000000000000000029 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */;
 			productName = WhisperKit;
+		};
+		B60000000000000000000031 /* WebRTC */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B60000000000000000000021 /* XCRemoteSwiftPackageReference "WebRTC" */;
+			productName = WebRTC;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
