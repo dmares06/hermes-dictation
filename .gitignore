@@ -17,3 +17,6 @@ xcuserdata/
 !**/.env.example
 **/.vercel/
 **/node_modules/
+
+# ByteRover workspace artifacts
+.brv/
