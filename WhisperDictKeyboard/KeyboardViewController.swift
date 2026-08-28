@@ -18,10 +18,6 @@ final class KeyboardViewController: UIInputViewController {
     // far too slow to do per keystroke.
     private let wordChecker = SystemWordChecker()
     private let keyFeedback = UIImpactFeedbackGenerator(style: .light)
-    private let speech = KeyboardSpeechRecognizer()
-    // Tracks what this dictation has already put in the field, so each partial
-    // result becomes a minimal edit rather than a duplicate insertion.
-    private var liveWriter = LiveTranscriptWriter()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -31,7 +27,6 @@ final class KeyboardViewController: UIInputViewController {
             onInsert: { [weak self] text in self?.insertText(text) },
             onDelete: { [weak self] in self?.deleteBackward() },
             onNextKeyboard: { [weak self] in self?.advanceToNextInputMode() },
-            onToggleDictation: { [weak self] in self?.toggleDictation() },
             onApplySuggestion: { [weak self] suggestion in self?.apply(suggestion) },
             onKeyFeedback: { [weak self] in self?.playKeyFeedback() }
         )
@@ -54,7 +49,6 @@ final class KeyboardViewController: UIInputViewController {
         // Warming the generator here means the first keystroke taps as
         // promptly as the hundredth.
         keyFeedback.prepare()
-        wireSpeechEvents()
         refreshSharedTranscript()
     }
 
@@ -74,10 +68,6 @@ final class KeyboardViewController: UIInputViewController {
         sessionTimer?.invalidate()
         sessionTimer = nil
         transcriptObservation = nil
-        // Leaving the field with the microphone open would keep recording
-        // into a text field the user can no longer see.
-        if speech.isListening { speech.cancel() }
-        endDictation()
     }
 
     override func textDidChange(_ textInput: UITextInput?) {
@@ -187,116 +177,6 @@ final class KeyboardViewController: UIInputViewController {
     /// ignored without it.
     // MARK: - In-keyboard dictation
 
-    /// Starts or stops recording inside the keyboard.
-    ///
-    /// This is the path with no cold start: with Full Access the extension may
-    /// use the microphone itself, and Apple's recognizer fits in an
-    /// extension's memory budget where a Whisper model does not. The Action
-    /// Button handoff stays for when accuracy matters more than immediacy.
-    private func toggleDictation() {
-        playKeyFeedback()
-        if speech.isListening {
-            keyboardState.dictationPhase = .finishing
-            speech.stop()
-            return
-        }
-
-        if let blocker = KeyboardDictationGate.blocker(
-            hasFullAccess: hasFullAccess,
-            microphoneAuthorized: KeyboardSpeechRecognizer.microphoneAuthorized,
-            speechAuthorized: KeyboardSpeechRecognizer.speechAuthorized,
-            recognizerAvailable: speech.isRecognizerAvailable
-        ) {
-            keyboardState.handoffStatus = blocker.message
-            note("blocked", detail: String(describing: blocker))
-            return
-        }
-
-        liveWriter = LiveTranscriptWriter()
-        keyboardState.dictationPhase = .starting
-        keyboardState.handoffStatus = "Starting…"
-        note("requested")
-        speech.start()
-    }
-
-    /// Records what in-keyboard dictation just did, into the app group.
-    ///
-    /// A keyboard extension's logs cannot be streamed from a Mac, so without
-    /// this a failure on device is invisible: the only evidence is a button
-    /// that did nothing. `./ios_run.sh --keyboard` reads it back.
-    private func note(_ outcome: String, detail: String? = nil) {
-        var record: [String: Any] = [
-            "at": Date().timeIntervalSince1970,
-            "outcome": outcome,
-            "hasFullAccess": hasFullAccess,
-            "recognizerAvailable": speech.isRecognizerAvailable,
-        ]
-        record["microphone"] = KeyboardSpeechRecognizer.microphoneAuthorized.map(String.init(describing:)) ?? "undetermined"
-        record["speech"] = KeyboardSpeechRecognizer.speechAuthorized.map(String.init(describing:)) ?? "undetermined"
-        if let detail { record["detail"] = detail }
-        BackgroundDictationState.sharedDefaults?.set(record, forKey: "lastKeyboardDictation")
-    }
-
-    private func wireSpeechEvents() {
-        speech.onEvent = { [weak self] event in
-            guard let self else { return }
-            switch event {
-            case .started:
-                self.keyboardState.dictationPhase = .listening
-                self.keyboardState.handoffStatus = "Listening — speak, then tap Stop"
-                self.note("listening")
-            case .partial(let text):
-                self.applyLive(text)
-            case .finished(let text):
-                self.applyLive(text)
-                self.finishDictation()
-            case .failed(let message):
-                self.keyboardState.handoffStatus = message
-                self.note("failed", detail: message)
-                self.endDictation()
-            }
-        }
-    }
-
-    /// Rewrites only what changed since the last partial result, so the text
-    /// updates in place instead of the field filling with repeated guesses.
-    private func applyLive(_ text: String) {
-        let edit = liveWriter.edit(replacingWith: text)
-        guard !edit.isNoOp else { return }
-        for _ in 0..<edit.deleteCount {
-            textDocumentProxy.deleteBackward()
-        }
-        if !edit.insertText.isEmpty {
-            textDocumentProxy.insertText(edit.insertText)
-        }
-    }
-
-    /// Applies the same cleanup a Whisper transcript gets, then leaves a
-    /// trailing space so typing or dictating can continue naturally.
-    private func finishDictation() {
-        let edit = liveWriter.finishEdit()
-        for _ in 0..<edit.deleteCount {
-            textDocumentProxy.deleteBackward()
-        }
-        if !edit.insertText.isEmpty {
-            textDocumentProxy.insertText(edit.insertText)
-        }
-        let dictated = liveWriter.insertedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        note("finished", detail: "\(dictated.count) characters")
-        if !dictated.isEmpty {
-            // Dictation done here should show up in history like any other.
-            try? transcriptStore.save(dictated)
-        }
-        keyboardState.handoffStatus = nil
-        endDictation()
-    }
-
-    private func endDictation() {
-        keyboardState.dictationPhase = .idle
-        liveWriter = LiveTranscriptWriter()
-        refreshSuggestions()
-    }
-
     private func playKeyFeedback() {
         UIDevice.current.playInputClick()
         keyFeedback.impactOccurred(intensity: 0.6)
@@ -354,5 +234,4 @@ final class KeyboardState {
     var backgroundPhase: BackgroundDictationPhase = .idle
     var isListening = false
     var suggestions: [KeyboardSuggestion] = []
-    var dictationPhase: KeyboardDictationPhase = .idle
 }

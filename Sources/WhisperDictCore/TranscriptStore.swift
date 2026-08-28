@@ -53,6 +53,19 @@ public final class TranscriptStore: @unchecked Sendable {
         defaults.set(try encoder.encode(updatedHistory), forKey: Keys.history)
     }
 
+    /// Removes one transcript. `latest` — what the keyboard inserts — follows
+    /// the newest remaining entry so a deleted dictation cannot resurface.
+    public func delete(id: UUID) throws {
+        let remaining = history.filter { $0.id != id }
+        defaults.set(try encoder.encode(remaining), forKey: Keys.history)
+        guard latest?.id == id else { return }
+        if let newest = remaining.first {
+            defaults.set(try encoder.encode(newest), forKey: Keys.latest)
+        } else {
+            defaults.removeObject(forKey: Keys.latest)
+        }
+    }
+
     public func clear() {
         defaults.removeObject(forKey: Keys.latest)
         defaults.removeObject(forKey: Keys.history)

@@ -27,6 +27,27 @@ final class TranscriptStoreTests: XCTestCase {
         XCTAssertEqual(store.history.map(\.text), ["Second", "First"])
     }
 
+    func testDeletingOneTranscriptKeepsTheRestAndRepairsLatest() throws {
+        let store = TranscriptStore(defaults: defaults, historyLimit: 5)
+        try store.save("First", at: Date(timeIntervalSince1970: 1))
+        try store.save("Second", at: Date(timeIntervalSince1970: 2))
+        try store.save("Third", at: Date(timeIntervalSince1970: 3))
+        let middle = store.history[1]
+
+        try store.delete(id: middle.id)
+        XCTAssertEqual(store.history.map(\.text), ["Third", "First"])
+        XCTAssertEqual(store.latest?.text, "Third", "deleting an older entry leaves the latest alone")
+
+        try store.delete(id: store.history[0].id)
+        XCTAssertEqual(store.history.map(\.text), ["First"])
+        XCTAssertEqual(store.latest?.text, "First", "deleting the latest promotes the next newest")
+
+        try store.delete(id: store.history[0].id)
+        XCTAssertTrue(store.history.isEmpty)
+        XCTAssertNil(store.latest)
+        XCTAssertNoThrow(try store.delete(id: UUID()), "an unknown id is a no-op")
+    }
+
     func testHistoryIsBounded() throws {
         let store = TranscriptStore(defaults: defaults, historyLimit: 2)
         try store.save("One", at: Date(timeIntervalSince1970: 1))

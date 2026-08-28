@@ -131,6 +131,12 @@ final class DictationSessionController {
         history = []
     }
 
+    func deleteTranscript(id: UUID) {
+        try? store.delete(id: id)
+        history = store.history
+        if !history.contains(where: { $0.text == transcript }) { transcript = store.latest?.text ?? "" }
+    }
+
     func dismissError() {
         if case .failed = phase { phase = .ready }
     }
