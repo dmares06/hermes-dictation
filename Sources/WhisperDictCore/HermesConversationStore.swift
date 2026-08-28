@@ -3,6 +3,8 @@ import Foundation
 public enum HermesConversationMode: String, Codable, Equatable, Sendable {
     case realtime
     case offline
+    /// Answered by a Hermes Agent gateway.
+    case hermes
 }
 
 public enum HermesConversationRole: String, Codable, Equatable, Sendable {
@@ -131,6 +133,15 @@ public final class HermesConversationStore: @unchecked Sendable {
             spokenWordCount: history.reduce(0) { $0 + $1.personWordCount },
             totalCapturedWordCount: max(0, dictatedWordCount) + history.reduce(0) { $0 + $1.personWordCount }
         )
+    }
+
+    /// Removes one conversation. Deleting something that is already gone is a
+    /// no-op rather than an error: the caller is a swipe on a list that may
+    /// have been rewritten underneath it.
+    public func delete(id conversationID: UUID) throws {
+        let remaining = history.filter { $0.id != conversationID }
+        guard remaining.count != history.count else { return }
+        try persist(remaining)
     }
 
     public func clear() {

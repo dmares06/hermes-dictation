@@ -89,7 +89,10 @@ struct ContentView: View {
         .onChange(of: settings.listeningWindow) { _, _ in refreshListeningWindow() }
         .onChange(of: agent.conversationActive) { _, active in
             // The agent configures its own audio session; the two cannot share.
-            if active { listening.deactivate() } else { refreshListeningWindow() }
+            // Taking it happens synchronously through onWillTakeAudioSession,
+            // because this observer fires after the agent's recorder is already
+            // running. Giving it back can be late without harm.
+            if !active { refreshListeningWindow() }
         }
         .onChange(of: downloadService.isPrepared) { _, _ in refreshListeningWindow() }
         .onChange(of: listening.isListening) { _, isListening in
@@ -135,6 +138,7 @@ struct ContentView: View {
     }
 
     private func wireListeningWindow() {
+        agent.onWillTakeAudioSession = { listening.deactivate() }
         listening.isBusy = { dictation.isRecording || dictation.isBusy }
         dictation.sharedAudioEngine = { listening.audioEngine }
         listening.onCaptureLost = { await dictation.stopIfNeeded(settings: settings) }
@@ -217,6 +221,7 @@ struct ContentView: View {
                         HistorySection(
                             transcripts: dictation.history,
                             copyAction: copy,
+                            deleteAction: { dictation.deleteTranscript(id: $0) },
                             clearAction: dictation.clearHistory
                         )
                     }
@@ -535,6 +540,7 @@ extension String: @retroactive Identifiable {
 private struct HistorySection: View {
     let transcripts: [SavedTranscript]
     let copyAction: (String) -> Void
+    let deleteAction: (UUID) -> Void
     let clearAction: () -> Void
 
     var body: some View {
@@ -545,15 +551,32 @@ private struct HistorySection: View {
                 Button("Clear", role: .destructive, action: clearAction).font(.subheadline)
             }
             ForEach(transcripts.prefix(10)) { item in
-                Button { copyAction(item.text) } label: {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(item.text).lineLimit(3).foregroundStyle(.primary)
-                        Text(item.createdAt, style: .relative).font(.caption).foregroundStyle(.secondary)
+                HStack(alignment: .top, spacing: 10) {
+                    Button { copyAction(item.text) } label: {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(item.text).lineLimit(3).foregroundStyle(.primary)
+                            Text(item.createdAt, style: .relative).font(.caption).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Copies this transcript")
+                    .contextMenu {
+                        Button("Copy", systemImage: "doc.on.doc") { copyAction(item.text) }
+                        Button("Delete", systemImage: "trash", role: .destructive) { deleteAction(item.id) }
+                    }
+
+                    Button(role: .destructive) {
+                        withAnimation { deleteAction(item.id) }
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 32, height: 32)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Delete this dictation")
                 }
-                .buttonStyle(.plain)
-                .accessibilityHint("Copies this transcript")
                 if item.id != transcripts.prefix(10).last?.id { Divider() }
             }
         }

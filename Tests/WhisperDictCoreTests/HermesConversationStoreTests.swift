@@ -85,4 +85,28 @@ final class HermesConversationStoreTests: XCTestCase {
 
         XCTAssertTrue(store.history.isEmpty)
     }
+
+    func testDeleteRemovesOnlyTheNamedConversation() throws {
+        let store = HermesConversationStore(defaults: defaults)
+        let kept = UUID()
+        let removed = UUID()
+        try store.begin(id: kept, mode: .realtime, at: Date(timeIntervalSince1970: 1))
+        try store.begin(id: removed, mode: .offline, at: Date(timeIntervalSince1970: 2))
+        try store.append("keep this", role: .person, to: kept)
+
+        try store.delete(id: removed)
+
+        XCTAssertEqual(store.history.map(\.id), [kept])
+        XCTAssertEqual(store.history.first?.turns.first?.text, "keep this")
+    }
+
+    func testDeletingAnUnknownConversationLeavesHistoryAlone() throws {
+        let store = HermesConversationStore(defaults: defaults)
+        let id = UUID()
+        try store.begin(id: id, mode: .realtime)
+
+        try store.delete(id: UUID())
+
+        XCTAssertEqual(store.history.map(\.id), [id])
+    }
 }

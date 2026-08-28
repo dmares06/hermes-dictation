@@ -7,11 +7,15 @@ struct VoiceAgentMessage: Identifiable, Equatable {
     enum Role {
         case person
         case hermes
+        /// A timeline marker rather than something anyone said — rendered as a
+        /// centred date separator the way Messages breaks up a thread.
+        case milestone
     }
 
     let id = UUID()
     let role: Role
-    let text: String
+    var text: String
+    let createdAt: Date = Date()
 }
 
 struct VoiceAgentSharePayload: Identifiable {
@@ -27,6 +31,8 @@ final class VoiceAgentController {
         case connecting
         case recording
         case transcribing
+        /// Hermes Agent is reasoning or running a tool on the Mac.
+        case thinking
         case speaking
         case failed(String)
     }
@@ -44,6 +50,10 @@ final class VoiceAgentController {
     private(set) var conversationActive = false
     private(set) var usesRealtime = false
     private(set) var conversationHistory: [HermesConversation] = []
+    private(set) var memories: [HermesMemory] = []
+    /// What Hermes is doing mid-turn, e.g. "Searching the web…".
+    private(set) var activity: String?
+    private(set) var usesHermes = false
     private(set) var usageSummary = HermesUsageSummary(
         conversationCount: 0,
         spokenWordCount: 0,
@@ -54,6 +64,12 @@ final class VoiceAgentController {
     var messagePayload: MessageComposePayload?
     /// Where in-app notes and reminders go; injected by the root view.
     @ObservationIgnored var notes: NotesController?
+    /// Called just before the agent takes the audio session, so whatever
+    /// else holds it — the background listening window — can let go first.
+    /// This has to be a direct call, not an observer: an `onChange` fires
+    /// after the recorder has started, and deactivating the session under a
+    /// running engine leaves the microphone silently delivering nothing.
+    @ObservationIgnored var onWillTakeAudioSession: (() -> Void)?
     /// Mirrors the user's speaker preference into the live audio route.
     var usesSpeaker = true {
         didSet { realtimeClient.setSpeakerEnabled(usesSpeaker) }
@@ -68,10 +84,31 @@ final class VoiceAgentController {
     private let transcriber: DictationTranscriber
     private let speaker = VoiceAgentSpeaker()
     private let realtimeClient = RealtimeAgentClient()
+    private let hermesClient = HermesAgentClient()
     private let conversationStore: HermesConversationStore
     private let transcriptStore: TranscriptStore
+    private let memoryStore: HermesMemoryStore
     private var pendingRealtimeAction: VoiceAgentAction?
+    /// An action Hermes Agent proposed, waiting on the confirmation card.
+    private var pendingLocalAction: VoiceAgentAction?
+    private var hermesConfiguration: HermesAgentClient.Configuration?
+    private var hermesTurn: Task<Void, Never>?
+    /// Requests the voice relayed while an earlier one was still with Hermes.
+    /// They are sent together as one turn when it comes back — the user kept
+    /// talking, so they are one thought — and only the newest is spoken.
+    private var relayQueue: [RelayWaiter] = []
+    private var relayWorker: Task<Void, Never>?
+
+    private struct RelayWaiter {
+        let request: String
+        let continuation: CheckedContinuation<RealtimeFunctionResult, Never>
+    }
+    /// While an action confirmed by voice is carried out, what would have
+    /// been spoken is collected here and handed back to the voice instead.
+    private var announcementSink: [String]?
     private var turnDetector = VoiceTurnDetector()
+    /// Loudest level seen this turn; tells a silent mic from a quiet room.
+    private var turnPeakLevel: Float = 0
     private var conversationID: UUID?
     private var conversationSettings: SharedState?
     private var isCompletingTurn = false
@@ -82,12 +119,14 @@ final class VoiceAgentController {
         recorder: DictationAudioRecorder = DictationAudioRecorder(),
         transcriber: DictationTranscriber = DictationTranscriber(),
         conversationStore: HermesConversationStore = HermesConversationStore(),
-        transcriptStore: TranscriptStore = TranscriptStore()
+        transcriptStore: TranscriptStore = TranscriptStore(),
+        memoryStore: HermesMemoryStore = HermesMemoryStore()
     ) {
         self.recorder = recorder
         self.transcriber = transcriber
         self.conversationStore = conversationStore
         self.transcriptStore = transcriptStore
+        self.memoryStore = memoryStore
         recorder.onLevel = { [weak self] level in
             Task { @MainActor in self?.handleAudioLevel(level) }
         }
@@ -103,17 +142,12 @@ final class VoiceAgentController {
         realtimeClient.onAssistantTranscript = { [weak self] transcript in
             self?.appendRealtimeMessage(role: .hermes, text: transcript)
         }
-        realtimeClient.onInformationRequest = { [weak self] name, arguments in
-            await self?.runInformationTool(name, arguments) ?? "No result was available."
-        }
-        realtimeClient.onPreparedAction = { [weak self] prepared in
-            guard let self else { return }
-            self.handleRealtimeAction(RealtimePreparedAction(
-                callID: prepared.callID,
-                action: prepared.action.retargetedEmail(to: self.emailDelivery)
-            ))
+        realtimeClient.onFunctionCall = { [weak self] name, arguments in
+            await self?.answerFunctionCall(name, arguments)
+                ?? RealtimeFunctionResult(output: "No result was available.", speak: true)
         }
         refreshHistory()
+        memories = memoryStore.memories
     }
 
     deinit {
@@ -121,8 +155,10 @@ final class VoiceAgentController {
     }
 
     var isRecording: Bool { phase == .recording }
-    var isBusy: Bool { phase == .connecting || phase == .transcribing || phase == .speaking }
-    var pendingAction: VoiceAgentAction? { pendingRealtimeAction ?? session.pendingAction }
+    var isBusy: Bool {
+        phase == .connecting || phase == .transcribing || phase == .thinking || phase == .speaking
+    }
+    var pendingAction: VoiceAgentAction? { pendingRealtimeAction ?? pendingLocalAction ?? session.pendingAction }
     var canUseOfflineMode: Bool {
         if case .failed = phase { return !conversationActive }
         return false
@@ -139,9 +175,10 @@ final class VoiceAgentController {
     var statusText: String {
         switch phase {
         case .ready: conversationActive ? "Ready for your next request" : "Ready for a conversation"
-        case .connecting: "Connecting to Hermes Realtime…"
+        case .connecting: "Connecting to Hermes…"
         case .recording: "Listening — speak naturally…"
         case .transcribing: "Understanding on this iPhone…"
+        case .thinking: activity ?? "Hermes is thinking…"
         case .speaking: usesRealtime ? "Hermes is responding…" : "Speaking…"
         case .failed(let message): message
         }
@@ -154,7 +191,7 @@ final class VoiceAgentController {
         }
         switch primaryAction {
         case .startConversation:
-            await startConversation(settings: settings)
+            await startLiveCall(settings: settings)
         case .finishTurn:
             await finishCurrentTurn(settings: settings)
         case .wait:
@@ -170,6 +207,7 @@ final class VoiceAgentController {
         else { return }
 
         isCompletingTurn = true
+        AgentTurnLog.note(String(format: "turn ended by tap; peak level %.2f", turnPeakLevel))
         await stopAndProcess(settings: settings, conversationID: conversationID)
     }
 
@@ -186,16 +224,19 @@ final class VoiceAgentController {
     func confirmPending() async {
         guard pendingAction != nil else { return }
         if let action = pendingRealtimeAction {
-            if let conversationID { try? conversationStore.end(id: conversationID) }
+            // The call stays up: what happens next is announced through the
+            // voice, and leaving the app (to Messages, Maps…) ends it anyway.
             pendingRealtimeAction = nil
-            usesRealtime = false
-            conversationActive = false
-            realtimeClient.stop()
-            conversationID = nil
-            conversationSettings = nil
-            refreshHistory()
             messages.append(VoiceAgentMessage(role: .person, text: "Confirm"))
             await execute(action)
+            return
+        }
+        if let action = pendingLocalAction {
+            pendingLocalAction = nil
+            discardCurrentRecording()
+            messages.append(VoiceAgentMessage(role: .person, text: "Confirm"))
+            await execute(action)
+            await resumeHermesListening()
             return
         }
         discardCurrentRecording()
@@ -209,6 +250,17 @@ final class VoiceAgentController {
             pendingRealtimeAction = nil
             messages.append(VoiceAgentMessage(role: .person, text: "Cancel"))
             messages.append(VoiceAgentMessage(role: .hermes, text: "Cancelled. Nothing was opened or shared."))
+            if usesRealtime, conversationActive {
+                realtimeClient.say("The user cancelled on screen. Nothing was sent, saved, or opened. Acknowledge in a few words.")
+            }
+            return
+        }
+        if pendingLocalAction != nil {
+            pendingLocalAction = nil
+            discardCurrentRecording()
+            messages.append(VoiceAgentMessage(role: .person, text: "Cancel"))
+            messages.append(VoiceAgentMessage(role: .hermes, text: "Cancelled. Nothing was opened or shared."))
+            await resumeHermesListening()
             return
         }
         discardCurrentRecording()
@@ -221,7 +273,11 @@ final class VoiceAgentController {
         UIApplication.shared.open(url)
     }
 
-    private func startConversation(settings: SharedState) async {
+    /// The normal way to talk to Hermes: OpenAI Realtime is the ears and the
+    /// mouth — instant, interruptible, a natural voice — and every turn is
+    /// relayed to Hermes Agent on the Mac, which is the only brain.
+    func startLiveCall(settings: SharedState) async {
+        guard !conversationActive else { return }
         guard await microphonePermission() else {
             phase = .failed("Microphone access is off. Enable it in Settings to talk to Hermes.")
             showsMicrophoneSettings = true
@@ -229,6 +285,18 @@ final class VoiceAgentController {
         }
 
         let id = UUID()
+        do {
+            hermesConfiguration = try HermesAgentClient.configuration(
+                serverURL: settings.hermesServerURL,
+                conversationID: id,
+                model: settings.hermesVoiceModel
+            )
+        } catch {
+            phase = .failed(error.localizedDescription)
+            messages.append(VoiceAgentMessage(role: .hermes, text: error.localizedDescription))
+            return
+        }
+        onWillTakeAudioSession?()
         conversationActive = true
         conversationID = id
         conversationSettings = settings
@@ -238,12 +306,21 @@ final class VoiceAgentController {
             try await realtimeClient.start()
             try? conversationStore.begin(id: id, mode: .realtime)
             refreshHistory()
-            messages.append(
-                VoiceAgentMessage(
-                    role: .hermes,
-                    text: "Live conversation started. Speak naturally, interrupt me when you need to, or ask me to open a supported app."
-                )
-            )
+            AgentTurnLog.note("live conversation started; hermes at \(settings.hermesServerURL)")
+            messages.append(VoiceAgentMessage(role: .milestone, text: "Live conversation"))
+            return
+        } catch is CancellationError {
+            // The handshake was torn down while it was still in flight — an
+            // end-conversation tap, or the app leaving the foreground. That
+            // teardown already reset the UI, so reporting a failure here would
+            // turn the user's own cancel into an error message.
+            guard conversationID == id else { return }
+            usesRealtime = false
+            conversationActive = false
+            conversationID = nil
+            conversationSettings = nil
+            hermesConfiguration = nil
+            phase = .ready
             return
         } catch {
             realtimeClient.stop()
@@ -251,7 +328,8 @@ final class VoiceAgentController {
             conversationActive = false
             conversationID = nil
             conversationSettings = nil
-            let message = "\(error.localizedDescription) Offline voice was not started automatically."
+            hermesConfiguration = nil
+            let message = "\(error.localizedDescription) Tap \"Use slower voice\" to talk to Hermes with this iPhone's own voice."
             phase = .failed(message)
             messages.append(
                 VoiceAgentMessage(
@@ -263,27 +341,178 @@ final class VoiceAgentController {
         }
     }
 
-    func startOfflineConversation(settings: SharedState) async {
+    // MARK: - Hermes Agent
+
+    /// The fallback when the live call cannot be set up: the same Hermes, but
+    /// speech is transcribed on the phone and the reply read by the system
+    /// voice, with a few seconds' pause per turn.
+    func startHermesConversation(settings: SharedState) async {
         guard !conversationActive else { return }
         let id = UUID()
+        do {
+            hermesConfiguration = try HermesAgentClient.configuration(
+                serverURL: settings.hermesServerURL,
+                conversationID: id,
+                model: settings.hermesVoiceModel
+            )
+        } catch {
+            phase = .failed(error.localizedDescription)
+            messages.append(VoiceAgentMessage(role: .hermes, text: error.localizedDescription))
+            return
+        }
+        onWillTakeAudioSession?()
         conversationActive = true
         conversationID = id
         conversationSettings = settings
         usesRealtime = false
+        usesHermes = true
         guard await startRecording(settings: settings) else {
             conversationActive = false
             conversationID = nil
             conversationSettings = nil
+            usesHermes = false
+            hermesConfiguration = nil
             return
         }
-        try? conversationStore.begin(id: id, mode: .offline)
+        try? conversationStore.begin(id: id, mode: .hermes)
         refreshHistory()
-        messages.append(
-            VoiceAgentMessage(
-                role: .hermes,
-                text: "Offline conversation started. This mode transcribes first and uses the iPhone system voice."
-            )
-        )
+        AgentTurnLog.note("hermes conversation started; server \(settings.hermesServerURL)")
+        messages.append(VoiceAgentMessage(role: .milestone, text: "Hermes conversation"))
+    }
+
+    /// One turn against the gateway: stream the reply, speak it sentence by
+    /// sentence as it arrives, then listen again.
+    private func handleHermesTurn(_ text: String) async {
+        guard let configuration = hermesConfiguration, let expected = conversationID else { return }
+
+        // "Confirm" and "cancel" answer the card on screen; Hermes never hears them.
+        if pendingLocalAction != nil, let decision = VoiceAgentApprovalDecision(spoken: text) {
+            switch decision {
+            case .confirm: await confirmPending()
+            case .cancel: await cancelPending()
+            }
+            return
+        }
+
+        phase = .thinking
+        activity = nil
+        speaker.stop()
+        AgentTurnLog.note("hermes request → \(configuration.baseURL.host ?? "?"): \(text.prefix(80))")
+        let requestedAt = Date()
+        var spokenSentences = 0
+
+        var speech = HermesStreamedSpeech()
+        var bubbleID: UUID?
+        var completedText: String?
+        var failure: String?
+        do {
+            for try await event in hermesClient.reply(to: text, configuration: configuration) {
+                guard conversationID == expected else { return }
+                switch event {
+                case .created:
+                    AgentTurnLog.note(String(format: "hermes stream opened after %.1fs", Date().timeIntervalSince(requestedAt)))
+                case .toolStarted(let name, _):
+                    AgentTurnLog.note("hermes tool: \(name)")
+                    activity = Self.activityLabel(forTool: name)
+                case .toolFinished:
+                    activity = nil
+                case .textDelta(let delta):
+                    for sentence in speech.append(delta) {
+                        if spokenSentences == 0 {
+                            AgentTurnLog.note(String(format: "first sentence after %.1fs", Date().timeIntervalSince(requestedAt)))
+                        }
+                        spokenSentences += 1
+                        speaker.enqueue(sentence)
+                    }
+                    let shown = speech.displayText
+                    if !shown.isEmpty { bubbleID = upsertHermesBubble(id: bubbleID, text: shown) }
+                case .completed(_, let full):
+                    AgentTurnLog.note(String(format: "hermes completed after %.1fs (%d chars)", Date().timeIntervalSince(requestedAt), full.count))
+                    completedText = full
+                case .failed(let message):
+                    AgentTurnLog.note("hermes failed: \(message)")
+                    failure = message
+                }
+            }
+        } catch is CancellationError {
+            AgentTurnLog.note("hermes request cancelled")
+            return
+        } catch {
+            AgentTurnLog.note("hermes transport error: \(error.localizedDescription)")
+            failure = error.localizedDescription
+        }
+        activity = nil
+        guard conversationID == expected, !Task.isCancelled else { return }
+
+        if let failure {
+            failHermesTurn(failure, bubbleID: bubbleID)
+            return
+        }
+
+        let finished = speech.finish(completedText: completedText)
+        let shown = finished.spoken.isEmpty
+            ? (finished.action == nil ? "Hermes didn't say anything." : "Prepared something for you to approve.")
+            : finished.spoken
+        upsertHermesBubble(id: bubbleID, text: shown)
+        persistTurn(shown, role: .hermes)
+        if let remainder = finished.remainingSpeech { speaker.enqueue(remainder) }
+        AgentTurnLog.note("speaking: \(spokenSentences) streamed sentence(s) + \(finished.remainingSpeech?.count ?? 0) chars remainder")
+
+        phase = .speaking
+        await speaker.finishSpeaking()
+        AgentTurnLog.note("speaking finished")
+        guard conversationID == expected else { return }
+        phase = .ready
+
+        if let action = finished.action?.retargetedEmail(to: emailDelivery) {
+            pendingLocalAction = action
+        }
+        await resumeHermesListening()
+    }
+
+    private func resumeHermesListening() async {
+        guard conversationActive, usesHermes, let conversationSettings else { return }
+        phase = .ready
+        _ = await startRecording(settings: conversationSettings)
+    }
+
+    private func failHermesTurn(_ message: String, bubbleID: UUID?) {
+        let text = "Hermes couldn't answer: \(message)"
+        if let bubbleID, let index = messages.firstIndex(where: { $0.id == bubbleID }) {
+            messages.remove(at: index)
+        }
+        messages.append(VoiceAgentMessage(role: .hermes, text: text))
+        if let conversationID { try? conversationStore.end(id: conversationID) }
+        conversationActive = false
+        conversationID = nil
+        conversationSettings = nil
+        usesHermes = false
+        hermesConfiguration = nil
+        refreshHistory()
+        phase = .failed(text)
+    }
+
+    @discardableResult
+    private func upsertHermesBubble(id: UUID?, text: String) -> UUID {
+        if let id, let index = messages.firstIndex(where: { $0.id == id }) {
+            messages[index].text = text
+            return id
+        }
+        let message = VoiceAgentMessage(role: .hermes, text: text)
+        messages.append(message)
+        return message.id
+    }
+
+    private static func activityLabel(forTool name: String) -> String {
+        if name.hasPrefix("web_search") { return "Searching the web…" }
+        if name.hasPrefix("web_") { return "Reading a page…" }
+        if name.hasPrefix("browser") { return "Using the browser…" }
+        if name.contains("memory") { return "Checking memory…" }
+        if name == "session_search" { return "Looking through past conversations…" }
+        if name.hasPrefix("skill") { return "Using a skill…" }
+        if name.contains("delegate") { return "Handing off to a helper…" }
+        if name.contains("image") { return "Working on an image…" }
+        return "Using \(name.replacingOccurrences(of: "_", with: " "))…"
     }
 
     private func startRecording(settings: SharedState) async -> Bool {
@@ -326,9 +555,11 @@ final class VoiceAgentController {
 
     private func stopAndProcess(settings: SharedState, conversationID expectedConversationID: UUID) async {
         guard let samples = recorder.stop() else {
+            AgentTurnLog.note("recorder returned no samples")
             if isRecording { phase = .failed("The recording was empty. Please try again.") }
             return
         }
+        AgentTurnLog.note("transcribing \(samples.count) samples")
         elapsedTask?.cancel()
         elapsedTask = nil
         phase = .transcribing
@@ -350,9 +581,11 @@ final class VoiceAgentController {
                 autoCapitalize: collectsProse && settings.autoCapitalize
             )
             let transcript = TranscriptCleaner.clean(rawText, options: options)
+            AgentTurnLog.note("transcript (\(transcript.count) chars): \(transcript.prefix(80))")
             phase = .ready
             await process(transcript, resumeConversation: true)
         } catch {
+            AgentTurnLog.note("transcription failed: \(error.localizedDescription)")
             guard conversationActive, conversationID == expectedConversationID else { return }
             messages.append(VoiceAgentMessage(role: .hermes, text: "I didn't catch that. I'm listening again."))
             phase = .speaking
@@ -365,6 +598,7 @@ final class VoiceAgentController {
     private func process(_ text: String, resumeConversation: Bool = false) async {
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else {
+            AgentTurnLog.note("empty transcript; listening again")
             if resumeConversation, conversationActive, let conversationSettings {
                 _ = await startRecording(settings: conversationSettings)
             }
@@ -372,6 +606,15 @@ final class VoiceAgentController {
         }
         messages.append(VoiceAgentMessage(role: .person, text: cleaned))
         persistTurn(cleaned, role: .person)
+        if usesHermes {
+            // Held in a task so ending the conversation can cut the stream
+            // off mid-reply instead of waiting for Hermes to finish.
+            let turn = Task { await self.handleHermesTurn(cleaned) }
+            hermesTurn = turn
+            await turn.value
+            if hermesTurn == turn { hermesTurn = nil }
+            return
+        }
         await handle(session.receive(cleaned), resumeConversation: resumeConversation)
     }
 
@@ -398,6 +641,7 @@ final class VoiceAgentController {
     private func handleAudioLevel(_ level: Float) {
         audioLevel = level
         guard conversationActive, isRecording, !isCompletingTurn else { return }
+        turnPeakLevel = max(turnPeakLevel, level)
         let result = turnDetector.observe(level: level, at: ProcessInfo.processInfo.systemUptime)
         switch result {
         case .listening:
@@ -405,9 +649,11 @@ final class VoiceAgentController {
         case .finishTurn:
             guard let conversationSettings, let conversationID else { return }
             isCompletingTurn = true
+            AgentTurnLog.note(String(format: "turn ended by silence; peak level %.2f", turnPeakLevel))
             Task { await stopAndProcess(settings: conversationSettings, conversationID: conversationID) }
         case .idleTimeout:
             isCompletingTurn = true
+            AgentTurnLog.note(String(format: "idle timeout; peak level %.2f", turnPeakLevel))
             Task { await endForIdleTimeout() }
         }
     }
@@ -431,11 +677,20 @@ final class VoiceAgentController {
 
     func endConversation(announce: Bool = true) async {
         let wasActive = conversationActive || isRecording || isBusy
+        if wasActive { AgentTurnLog.note("conversation ended (announce: \(announce), phase: \(phase))") }
         let endingConversationID = conversationID
         conversationActive = false
         conversationID = nil
         conversationSettings = nil
         pendingRealtimeAction = nil
+        pendingLocalAction = nil
+        hermesTurn?.cancel()
+        hermesTurn = nil
+        abandonRelayQueue()
+        announcementSink = nil
+        hermesConfiguration = nil
+        usesHermes = false
+        activity = nil
         realtimeClient.stop()
         usesRealtime = false
         speaker.stop()
@@ -446,7 +701,7 @@ final class VoiceAgentController {
             refreshHistory()
         }
         guard announce, wasActive else { return }
-        messages.append(VoiceAgentMessage(role: .hermes, text: "Conversation ended."))
+        messages.append(VoiceAgentMessage(role: .milestone, text: "Conversation ended"))
     }
 
     private func discardCurrentRecording() {
@@ -457,61 +712,132 @@ final class VoiceAgentController {
         isCompletingTurn = false
     }
 
-    // MARK: - Read-only tools
+    // MARK: - Relaying the live call to Hermes
 
-    /// Runs a tool that only reads and returns what Hermes should hear back.
-    ///
-    /// These bypass the confirmation flow on purpose: there is nothing to undo
-    /// in a search or a lookup, and making the user approve one would turn
-    /// "what's the weather" into a dialog box.
-    private func runInformationTool(_ name: String, _ arguments: [String: Any]) async -> String {
-        switch name {
-        case "get_datetime":
-            let formatter = DateFormatter()
-            formatter.dateFormat = "EEEE, d MMMM yyyy 'at' h:mm a zzz"
-            return "It is currently \(formatter.string(from: Date())) in \(TimeZone.current.identifier)."
-
-        case "search_web":
-            guard let query = (arguments["query"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !query.isEmpty
-            else { return "No search query was provided." }
-            do {
-                let result = try await HermesBackendClient().search(query)
-                guard !result.answer.isEmpty else { return "The search returned nothing useful." }
-                let sources = result.sources.prefix(3).map(\.title).joined(separator: ", ")
-                return sources.isEmpty ? result.answer : "\(result.answer) (Sources: \(sources).)"
-            } catch {
-                return "The web search failed: \(error.localizedDescription)"
-            }
-
-        case "search_notes":
-            guard let notes else { return "Notes are not available right now." }
-            let query = (arguments["query"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let matches = query.isEmpty ? Array(notes.notes.prefix(5)) : Array(notes.search(query).prefix(5))
-            guard !matches.isEmpty else {
-                return query.isEmpty ? "There are no saved notes." : "No notes match \"\(query)\"."
-            }
-            return matches
-                .map { "\($0.title): \($0.body.prefix(200))" }
-                .joined(separator: " | ")
-
-        case "list_reminders":
-            guard let notes else { return "Reminders are not available right now." }
-            await notes.refreshReminders()
-            let upcoming = notes.reminders.filter { !$0.isCompleted }.prefix(8)
-            guard !upcoming.isEmpty else { return "There are no upcoming reminders." }
-            let formatter = DateFormatter()
-            formatter.dateFormat = "EEEE d MMMM 'at' h:mm a"
-            return upcoming
-                .map { item in
-                    guard let due = item.dueDate else { return item.title }
-                    return "\(item.title), due \(formatter.string(from: due))"
-                }
-                .joined(separator: " | ")
-
-        default:
-            return "That tool is not available."
+    /// Answers the voice model's one tool. "Confirm" and "cancel" for an
+    /// action on screen are settled here; everything else goes to Hermes.
+    private func answerFunctionCall(_ name: String, _ arguments: [String: Any]) async -> RealtimeFunctionResult {
+        guard name == HermesVoiceRelay.toolName else {
+            return RealtimeFunctionResult(output: "That tool is not available.", speak: true)
         }
+        guard let request = HermesVoiceRelay.request(from: arguments) else {
+            return RealtimeFunctionResult(output: HermesVoiceRelay.failureOutput("nothing was said"), speak: true)
+        }
+        if pendingRealtimeAction != nil, let decision = VoiceAgentApprovalDecision(spoken: request) {
+            switch decision {
+            case .confirm:
+                return RealtimeFunctionResult(output: await executeConfirmedRealtimeAction(), speak: true)
+            case .cancel:
+                pendingRealtimeAction = nil
+                messages.append(VoiceAgentMessage(role: .hermes, text: "Cancelled. Nothing was opened or shared."))
+                return RealtimeFunctionResult(
+                    output: "Cancelled. Nothing was sent, saved, or opened. Tell the user in a few words.",
+                    speak: true
+                )
+            }
+        }
+        return await withCheckedContinuation { continuation in
+            relayQueue.append(RelayWaiter(request: request, continuation: continuation))
+            startRelayWorkerIfNeeded()
+        }
+    }
+
+    /// Drains the queue one Hermes turn at a time. Everything that queued up
+    /// while a turn was in flight goes out together as the next turn.
+    private func startRelayWorkerIfNeeded() {
+        guard relayWorker == nil else { return }
+        relayWorker = Task { [weak self] in
+            guard let self else { return }
+            while !self.relayQueue.isEmpty, !Task.isCancelled {
+                let batch = self.relayQueue
+                self.relayQueue = []
+                if batch.count > 1 { AgentTurnLog.note("coalescing \(batch.count) queued requests into one turn") }
+                let output = await self.relayToHermes(batch.map(\.request).joined(separator: "\n"))
+                for waiter in batch.dropLast() { waiter.continuation.resume(returning: .superseded) }
+                batch.last?.continuation.resume(returning: RealtimeFunctionResult(output: output, speak: true))
+            }
+            self.relayWorker = nil
+        }
+    }
+
+    /// Lets every waiting call go so nothing leaks when the call ends; the
+    /// Realtime client discards results for a connection that is gone.
+    private func abandonRelayQueue() {
+        relayWorker?.cancel()
+        relayWorker = nil
+        let waiting = relayQueue
+        relayQueue = []
+        for waiter in waiting { waiter.continuation.resume(returning: .superseded) }
+    }
+
+    /// One turn against the gateway, returned whole as the tool result: the
+    /// voice model needs the complete reply before it can speak it.
+    private func relayToHermes(_ request: String) async -> String {
+        guard let configuration = hermesConfiguration, let expected = conversationID else {
+            return HermesVoiceRelay.failureOutput("the conversation has ended")
+        }
+        phase = .thinking
+        activity = nil
+        AgentTurnLog.note("hermes request → \(configuration.baseURL.host ?? "?"): \(request.prefix(80))")
+        let requestedAt = Date()
+
+        var streamed = ""
+        var completedText: String?
+        var failure: String?
+        do {
+            for try await event in hermesClient.reply(to: request, configuration: configuration) {
+                guard conversationID == expected else { return HermesVoiceRelay.failureOutput("the conversation has ended") }
+                switch event {
+                case .created:
+                    AgentTurnLog.note(String(format: "hermes stream opened after %.1fs", Date().timeIntervalSince(requestedAt)))
+                case .toolStarted(let name, _):
+                    AgentTurnLog.note("hermes tool: \(name)")
+                    activity = Self.activityLabel(forTool: name)
+                case .toolFinished:
+                    activity = nil
+                case .textDelta(let delta):
+                    streamed += delta
+                case .completed(_, let full):
+                    AgentTurnLog.note(String(format: "hermes completed after %.1fs (%d chars)", Date().timeIntervalSince(requestedAt), full.count))
+                    completedText = full
+                case .failed(let message):
+                    AgentTurnLog.note("hermes failed: \(message)")
+                    failure = message
+                }
+            }
+        } catch is CancellationError {
+            AgentTurnLog.note("hermes request cancelled")
+            return HermesVoiceRelay.failureOutput("the conversation has ended")
+        } catch {
+            AgentTurnLog.note("hermes transport error: \(error.localizedDescription)")
+            failure = error.localizedDescription
+        }
+        activity = nil
+        guard conversationID == expected, !Task.isCancelled else {
+            return HermesVoiceRelay.failureOutput("the conversation has ended")
+        }
+        if let failure { return HermesVoiceRelay.failureOutput(failure) }
+
+        let result = HermesVoiceRelay.toolOutput(fromReply: completedText ?? streamed)
+        if let action = result.action?.retargetedEmail(to: emailDelivery) {
+            pendingRealtimeAction = action
+        }
+        AgentTurnLog.note("relaying \(result.output.count) chars to the voice\(result.action == nil ? "" : " + an action to approve")")
+        return result.output
+    }
+
+    /// Carries out the action on screen after the user said "confirm", and
+    /// returns what happened for the voice to say.
+    private func executeConfirmedRealtimeAction() async -> String {
+        guard let action = pendingRealtimeAction else {
+            return "There was nothing waiting for approval. Tell the user."
+        }
+        pendingRealtimeAction = nil
+        announcementSink = []
+        await execute(action)
+        let outcome = announcementSink?.joined(separator: " ") ?? ""
+        announcementSink = nil
+        return "\(outcome.isEmpty ? "Done; the phone is showing it now." : outcome) Tell the user in a few words."
     }
 
     private func execute(_ action: VoiceAgentAction) async {
@@ -586,7 +912,10 @@ final class VoiceAgentController {
         guard usesRealtime || state == .connecting else { return }
         switch state {
         case .disconnected:
-            if conversationActive { phase = .failed("The live conversation disconnected. Tap to reconnect.") }
+            if conversationActive {
+                AgentTurnLog.note("live conversation disconnected")
+                phase = .failed("The live conversation disconnected. Tap to reconnect.")
+            }
         case .connecting:
             phase = .connecting
         case .listening:
@@ -594,8 +923,13 @@ final class VoiceAgentController {
         case .responding:
             phase = .speaking
         case .failed(let message):
+            AgentTurnLog.note("live conversation failed: \(message)")
             if let conversationID { try? conversationStore.end(id: conversationID) }
             realtimeClient.stop()
+            abandonRelayQueue()
+            announcementSink = nil
+            hermesConfiguration = nil
+            pendingRealtimeAction = nil
             phase = .failed(message)
             conversationActive = false
             usesRealtime = false
@@ -607,23 +941,6 @@ final class VoiceAgentController {
 
     private func handleRealtimeUserTranscript(_ transcript: String) {
         appendRealtimeMessage(role: .person, text: transcript)
-        guard pendingRealtimeAction != nil,
-              let decision = VoiceAgentApprovalDecision(spoken: transcript)
-        else { return }
-        Task {
-            switch decision {
-            case .confirm:
-                guard let action = pendingRealtimeAction else { return }
-                pendingRealtimeAction = nil
-                realtimeClient.stop()
-                usesRealtime = false
-                conversationActive = false
-                await execute(action)
-            case .cancel:
-                pendingRealtimeAction = nil
-                messages.append(VoiceAgentMessage(role: .hermes, text: "Cancelled. Nothing was opened or shared."))
-            }
-        }
     }
 
     private func appendRealtimeMessage(role: VoiceAgentMessage.Role, text: String) {
@@ -635,6 +952,24 @@ final class VoiceAgentController {
 
     func clearConversationHistory() {
         conversationStore.clear()
+        refreshHistory()
+    }
+
+    func forgetMemory(id: UUID) {
+        try? memoryStore.delete(id: id)
+        memories = memoryStore.memories
+    }
+
+    func forgetEverything() {
+        try? memoryStore.clear()
+        memories = memoryStore.memories
+    }
+
+    /// Removes one saved conversation. The live thread on screen is left alone:
+    /// deleting yesterday's transcript should not blank out what is being said
+    /// right now.
+    func deleteConversation(id: UUID) {
+        try? conversationStore.delete(id: id)
         refreshHistory()
     }
 
@@ -652,21 +987,6 @@ final class VoiceAgentController {
         usageSummary = conversationStore.summary(dictatedWordCount: dictatedWords)
     }
 
-    private func handleRealtimeAction(_ prepared: RealtimePreparedAction) {
-        guard pendingRealtimeAction == nil else {
-            realtimeClient.completeFunctionCall(
-                id: prepared.callID,
-                output: "Rejected: another action is already waiting for confirmation."
-            )
-            return
-        }
-        pendingRealtimeAction = prepared.action
-        realtimeClient.completeFunctionCall(
-            id: prepared.callID,
-            output: "Prepared for review. Ask the user to say confirm or cancel. Do not claim it has happened."
-        )
-    }
-
     private func open(_ url: URL, failureMessage: String) async {
         let opened = await UIApplication.shared.open(url)
         if !opened {
@@ -676,6 +996,14 @@ final class VoiceAgentController {
 
     private func announce(_ message: String) async {
         messages.append(VoiceAgentMessage(role: .hermes, text: message))
+        if announcementSink != nil {
+            announcementSink?.append(message)
+            return
+        }
+        if usesRealtime, conversationActive {
+            realtimeClient.say("Tell the user in a few words: \(message)")
+            return
+        }
         phase = .speaking
         await speaker.speak(message)
         phase = .ready
@@ -683,6 +1011,14 @@ final class VoiceAgentController {
 
     private func reportHandoffFailure(_ message: String) async {
         messages.append(VoiceAgentMessage(role: .hermes, text: message))
+        if announcementSink != nil {
+            announcementSink?.append(message)
+            return
+        }
+        if usesRealtime, conversationActive {
+            realtimeClient.say("Tell the user in a few words that this failed: \(message)")
+            return
+        }
         phase = .failed(message)
         await speaker.speak(message)
     }
@@ -725,25 +1061,52 @@ private final class VoiceAgentSpeaker: NSObject, AVSpeechSynthesizerDelegate {
         synthesizer.delegate = self
     }
 
+    /// Utterances queued behind the current one, for replies spoken as they
+    /// stream in.
+    private var queuedCount = 0
+    private var drainContinuation: CheckedContinuation<Void, Never>?
+
     func speak(_ text: String) async {
         stop()
-        do {
-            try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
-            try audioSession.setActive(true)
-        } catch {
-            NSLog("WhisperDict speech audio setup failed: \(error.localizedDescription)")
-        }
-        let utterance = AVSpeechUtterance(string: text)
-        let language = Locale.current.identifier.replacingOccurrences(of: "_", with: "-")
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.92
-        utterance.pitchMultiplier = 0.98
-        utterance.voice = Self.preferredVoice(for: language)
+        prepareAudioSession()
+        let utterance = makeUtterance(text)
         self.utterance = utterance
 
         await withCheckedContinuation { continuation in
             self.continuation = continuation
             synthesizer.speak(utterance)
         }
+    }
+
+    /// Says `text` after whatever is already queued, without interrupting it.
+    func enqueue(_ text: String) {
+        if queuedCount == 0, utterance == nil { prepareAudioSession() }
+        queuedCount += 1
+        synthesizer.speak(makeUtterance(text))
+    }
+
+    /// Waits until everything queued with `enqueue` has been said.
+    func finishSpeaking() async {
+        guard queuedCount > 0 else { return }
+        await withCheckedContinuation { drainContinuation = $0 }
+    }
+
+    private func prepareAudioSession() {
+        do {
+            try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+            try audioSession.setActive(true)
+        } catch {
+            AgentTurnLog.note("speech audio setup failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func makeUtterance(_ text: String) -> AVSpeechUtterance {
+        let utterance = AVSpeechUtterance(string: text)
+        let language = Locale.current.identifier.replacingOccurrences(of: "_", with: "-")
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.92
+        utterance.pitchMultiplier = 0.98
+        utterance.voice = Self.preferredVoice(for: language)
+        return utterance
     }
 
     private static func preferredVoice(for language: String) -> AVSpeechSynthesisVoice? {
@@ -767,6 +1130,9 @@ private final class VoiceAgentSpeaker: NSObject, AVSpeechSynthesizerDelegate {
         continuation?.resume()
         continuation = nil
         utterance = nil
+        queuedCount = 0
+        drainContinuation?.resume()
+        drainContinuation = nil
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
@@ -782,10 +1148,20 @@ private final class VoiceAgentSpeaker: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     private func finish(_ completedUtterance: AVSpeechUtterance) {
-        guard utterance === completedUtterance else { return }
-        utterance = nil
-        continuation?.resume()
-        continuation = nil
+        if utterance === completedUtterance {
+            utterance = nil
+            continuation?.resume()
+            continuation = nil
+        } else if queuedCount > 0 {
+            queuedCount -= 1
+            if queuedCount == 0 {
+                drainContinuation?.resume()
+                drainContinuation = nil
+            }
+        } else {
+            return
+        }
+        guard utterance == nil, queuedCount == 0 else { return }
         try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
     }
 }

@@ -45,5 +45,7 @@
 	<dict/>
 	<key>WhisperDictRealtimeClientToken</key>
 	<string>$(WHISPERDICT_CLIENT_TOKEN)</string>
+	<key>WhisperDictHermesKey</key>
+	<string>$(WHISPERDICT_HERMES_KEY)</string>
 </dict>
 </plist>

@@ -2,9 +2,18 @@ import AVFoundation
 import Foundation
 import WebRTC
 
-struct RealtimePreparedAction {
-    let callID: String
-    let action: VoiceAgentAction
+/// What a function call hands back to the voice model.
+struct RealtimeFunctionResult {
+    let output: String
+    /// Whether the model should respond now. False for a call that was
+    /// overtaken by the user's next words: its output is recorded so the
+    /// conversation stays well-formed, but only the newest call is spoken.
+    let speak: Bool
+
+    static let superseded = RealtimeFunctionResult(
+        output: "Superseded: the user kept talking, and this was answered together with their next request.",
+        speak: false
+    )
 }
 
 @MainActor
@@ -20,9 +29,10 @@ final class RealtimeAgentClient: NSObject {
     var onStateChange: ((State) -> Void)?
     var onUserTranscript: ((String) -> Void)?
     var onAssistantTranscript: ((String) -> Void)?
-    var onPreparedAction: ((RealtimePreparedAction) -> Void)?
-    /// Runs a read-only tool and returns what the model should hear back.
-    var onInformationRequest: ((String, [String: Any]) async -> String)?
+    /// Answers a function call from the voice model and returns what it
+    /// should hear back. Realtime is only the ears and the mouth here: its
+    /// one tool relays the user's words to Hermes Agent.
+    var onFunctionCall: ((String, [String: Any]) async -> RealtimeFunctionResult)?
 
     private static let backendURL = URL(string: "https://whisperdict-realtime.vercel.app/api/realtime-session")!
     private static let factory: RTCPeerConnectionFactory = {
@@ -34,6 +44,8 @@ final class RealtimeAgentClient: NSObject {
     private var dataChannel: RTCDataChannel?
     private var assistantTranscript = ""
     private var isStopping = false
+    /// One response at a time: see `RealtimeResponseGate`.
+    private var responseGate = RealtimeResponseGate()
     // Fulfilled when ICE gathering reaches .complete, so the offer we send
     // carries its candidates. OpenAI does not accept trickle ICE and rejects
     // a candidate-less offer as an unparseable SDP.
@@ -54,9 +66,13 @@ final class RealtimeAgentClient: NSObject {
 
         onStateChange?(.connecting)
         var connectionEstablished = false
+        var created: RTCPeerConnection?
         var stage = RealtimeStartupStage.audioSession
         defer {
-            if !connectionEstablished { stop() }
+            // Only tear down our own attempt. Whatever cancelled this one may
+            // already have opened a newer connection, and closing that here
+            // would kill a session the user is about to talk into.
+            if !connectionEstablished, created === peerConnection { stop() }
         }
         do {
             try configureAudioSession()
@@ -76,6 +92,7 @@ final class RealtimeAgentClient: NSObject {
                 throw RealtimeAgentError.connectionCreationFailed
             }
             self.peerConnection = peerConnection
+            created = peerConnection
 
             stage = .audioTrack
             let audioSource = Self.factory.audioSource(with: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
@@ -95,6 +112,7 @@ final class RealtimeAgentClient: NSObject {
             let offer = try await createOffer(on: peerConnection)
             try await setLocalDescription(offer, on: peerConnection)
             await waitForIceGathering(on: peerConnection)
+            try checkStillLive(peerConnection)
             // Use the gathered local description, not the pre-ICE offer.
             let gatheredSDP = peerConnection.localDescription?.sdp ?? offer.sdp
             guard gatheredSDP.hasPrefix("v=0"), gatheredSDP.count > 100 else {
@@ -102,24 +120,48 @@ final class RealtimeAgentClient: NSObject {
             }
             stage = .backend
             let answerSDP = try await requestAnswer(for: gatheredSDP, clientToken: clientToken)
+            try checkStillLive(peerConnection)
             stage = .remoteAnswer
             try await setRemoteDescription(RTCSessionDescription(type: .answer, sdp: answerSDP), on: peerConnection)
             connectionEstablished = true
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw RealtimeStartupError(stage: stage, underlying: error)
         }
     }
 
-    func completeFunctionCall(id: String, output: String) {
+    /// Throws if this attempt was torn down while it was awaiting. Ending the
+    /// conversation or leaving the foreground closes the peer connection, and
+    /// WebRTC then rejects every later call on it — the answer arrives to a
+    /// "called wrong state: closed". That is a cancellation, not a failure the
+    /// user should see reported as one.
+    private func checkStillLive(_ connection: RTCPeerConnection) throws {
+        guard peerConnection === connection, connection.signalingState != .closed else {
+            throw CancellationError()
+        }
+    }
+
+    func completeFunctionCall(id: String, result: RealtimeFunctionResult) {
         send([
             "type": "conversation.item.create",
             "item": [
                 "type": "function_call_output",
                 "call_id": id,
-                "output": output,
+                "output": result.output,
             ],
         ])
-        send(["type": "response.create"])
+        if result.speak { requestResponse() }
+    }
+
+    /// Asks the voice to respond, or queues the request if it is already
+    /// mid-response — the user may have spoken while Hermes was thinking.
+    private func requestResponse() {
+        if responseGate.requestResponse() {
+            send(["type": "response.create"])
+        } else {
+            AgentTurnLog.note("response deferred: the voice is mid-response")
+        }
     }
 
     func stop() {
@@ -131,6 +173,7 @@ final class RealtimeAgentClient: NSObject {
         peerConnection?.close()
         peerConnection = nil
         assistantTranscript = ""
+        responseGate.reset()
         iceGatheringContinuation?.resume()
         iceGatheringContinuation = nil
         iceGatheringComplete = false
@@ -265,11 +308,30 @@ final class RealtimeAgentClient: NSObject {
     }
 
     private func send(_ event: [String: Any]) {
-        guard let dataChannel,
-              dataChannel.readyState == .open,
-              let data = try? JSONSerialization.data(withJSONObject: event)
-        else { return }
+        guard let data = try? JSONSerialization.data(withJSONObject: event) else { return }
+        guard let dataChannel, dataChannel.readyState == .open else {
+            // Every turn now depends on a function-call round trip, so a
+            // dropped event is a stalled conversation, not a detail.
+            AgentTurnLog.note("realtime event dropped (channel not open): \(event["type"] ?? "?")")
+            return
+        }
         dataChannel.sendData(RTCDataBuffer(data: data, isBinary: false))
+    }
+
+    /// Tells the voice something that happened on the phone — a confirmation
+    /// card tapped, an action carried out — and has it respond. Sent as a
+    /// system message rather than through `session.update`, which would
+    /// replace the instructions the backend built.
+    func say(_ text: String) {
+        send([
+            "type": "conversation.item.create",
+            "item": [
+                "type": "message",
+                "role": "system",
+                "content": [["type": "input_text", "text": text]],
+            ],
+        ])
+        requestResponse()
     }
 
     private func receive(_ data: Data) {
@@ -280,7 +342,10 @@ final class RealtimeAgentClient: NSObject {
         switch type {
         case "input_audio_buffer.speech_started":
             onStateChange?(.listening)
-        case "input_audio_buffer.speech_stopped", "response.created":
+        case "input_audio_buffer.speech_stopped":
+            onStateChange?(.responding)
+        case "response.created":
+            responseGate.noteResponseCreated()
             onStateChange?(.responding)
         case "conversation.item.input_audio_transcription.completed":
             if let transcript = object["transcript"] as? String {
@@ -296,13 +361,27 @@ final class RealtimeAgentClient: NSObject {
         case "response.done":
             handleCompletedResponse(object)
             onStateChange?(.listening)
+            if responseGate.noteResponseDone() {
+                AgentTurnLog.note("sending the deferred response now")
+                requestResponse()
+            }
         case "error":
-            let error = object["error"] as? [String: Any]
-            let message = error?["message"] as? String ?? "The Realtime conversation failed."
-            onStateChange?(.failed(message))
+            handleError(object["error"] as? [String: Any])
         default:
             break
         }
+    }
+
+    /// Most errors are about one request of ours and leave the session
+    /// running; only a lost session ends the call. Every one is logged —
+    /// the old code ended the call on all of them without a trace.
+    private func handleError(_ error: [String: Any]?) {
+        let code = error?["code"] as? String
+        let type = error?["type"] as? String
+        let message = error?["message"] as? String ?? "The Realtime conversation failed."
+        let verdict = responseGate.noteError(code: code, type: type)
+        AgentTurnLog.note("realtime error (\(verdict)) \(code ?? type ?? "?"): \(message)")
+        if verdict == .fatal { onStateChange?(.failed(message)) }
     }
 
     private func handleCompletedResponse(_ event: [String: Any]) {
@@ -317,62 +396,21 @@ final class RealtimeAgentClient: NSObject {
                   let argumentsData = argumentsString.data(using: .utf8),
                   let arguments = try? JSONSerialization.jsonObject(with: argumentsData) as? [String: Any]
             else { continue }
-            if Self.informationTools.contains(name) {
-                Task { [weak self] in
-                    let output = await self?.onInformationRequest?(name, arguments)
-                    self?.completeFunctionCall(id: callID, output: output ?? "No result was available.")
+            // The answer may take a while; by then the call this came from
+            // may have been ended and a new one started. Only the connection
+            // that issued the call gets its output.
+            let origin = peerConnection
+            Task { [weak self] in
+                let result = await self?.onFunctionCall?(name, arguments)
+                guard let self, self.peerConnection === origin else {
+                    AgentTurnLog.note("stale function result discarded after the call ended")
+                    return
                 }
-                continue
+                self.completeFunctionCall(
+                    id: callID,
+                    result: result ?? RealtimeFunctionResult(output: "No result was available.", speak: true)
+                )
             }
-            guard let action = preparedAction(name: name, arguments: arguments) else {
-                completeFunctionCall(id: callID, output: "Rejected: the requested action did not pass local validation.")
-                continue
-            }
-            onPreparedAction?(RealtimePreparedAction(callID: callID, action: action))
-        }
-    }
-
-    /// Tools that only read. They carry no side effect to confirm, so making
-    /// the user approve them would turn "what's the weather" into a dialog.
-    static let informationTools: Set<String> = [
-        "search_web", "search_notes", "list_reminders", "get_datetime",
-    ]
-
-    private func preparedAction(name: String, arguments: [String: Any]) -> VoiceAgentAction? {
-        switch name {
-        case "prepare_message":
-            guard let body = arguments["body"] as? String else { return nil }
-            return VoiceAgentAction.validatedMessage(body)
-        case "prepare_email":
-            guard let recipient = arguments["recipient"] as? String,
-                  let subject = arguments["subject"] as? String,
-                  let body = arguments["body"] as? String
-            else { return nil }
-            return VoiceAgentAction.validatedEmail(recipient: recipient, subject: subject, body: body)
-        case "send_email":
-            guard let recipient = arguments["recipient"] as? String,
-                  let subject = arguments["subject"] as? String,
-                  let body = arguments["body"] as? String
-            else { return nil }
-            return VoiceAgentAction.validatedSentEmail(recipient: recipient, subject: subject, body: body)
-        case "prepare_note":
-            guard let body = arguments["body"] as? String else { return nil }
-            return VoiceAgentAction.validatedNote(body)
-        case "save_note":
-            guard let body = arguments["body"] as? String else { return nil }
-            return VoiceAgentAction.validatedSavedNote(body)
-        case "create_reminder":
-            guard let title = arguments["title"] as? String else { return nil }
-            let due = (arguments["due"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) }
-            return VoiceAgentAction.validatedReminder(title: title, dueDate: due)
-        case "open_destination":
-            guard let destination = arguments["destination"] as? String else { return nil }
-            return VoiceAgentAction.validatedDestination(destination)
-        case "run_shortcut":
-            guard let name = arguments["name"] as? String else { return nil }
-            return VoiceAgentAction.validatedShortcut(name)
-        default:
-            return nil
         }
     }
 }
@@ -384,7 +422,9 @@ extension RealtimeAgentClient: RTCPeerConnectionDelegate {
     nonisolated func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
         Task { @MainActor [weak self] in
-            guard let self else { return }
+            // A connection we already replaced still reports its own teardown;
+            // letting that through would fail the session that superseded it.
+            guard let self, self.peerConnection === peerConnection else { return }
             switch newState {
             case .connected, .completed: self.onStateChange?(.listening)
             case .failed: self.onStateChange?(.failed("The Realtime connection failed."))
@@ -396,7 +436,7 @@ extension RealtimeAgentClient: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
         guard newState == .complete else { return }
         Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard let self, self.peerConnection === peerConnection else { return }
             self.iceGatheringComplete = true
             self.iceGatheringContinuation?.resume()
             self.iceGatheringContinuation = nil
@@ -406,8 +446,9 @@ extension RealtimeAgentClient: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {
         Task { @MainActor [weak self] in
+            guard let self, self.peerConnection === peerConnection else { return }
             dataChannel.delegate = self
-            self?.dataChannel = dataChannel
+            self.dataChannel = dataChannel
         }
     }
 }
@@ -415,7 +456,9 @@ extension RealtimeAgentClient: RTCPeerConnectionDelegate {
 extension RealtimeAgentClient: RTCDataChannelDelegate {
     nonisolated func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
         guard dataChannel.readyState == .open else { return }
-        Task { @MainActor [weak self] in self?.onStateChange?(.listening) }
+        Task { @MainActor [weak self] in
+            self?.onStateChange?(.listening)
+        }
     }
 
     nonisolated func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {

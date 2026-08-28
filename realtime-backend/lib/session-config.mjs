@@ -1,30 +1,34 @@
+// The Realtime session is the ears and the mouth of the assistant; Hermes
+// Agent on Dylan's Mac is the brain. The voice model gets one tool and one
+// job: pass on what was said, then say what came back. Phone-side actions
+// never appear here — they arrive inside Hermes's reply as an
+// <hermes-action> block, which the app validates and puts on its
+// confirmation card.
 export const realtimeSession = Object.freeze({
   type: "realtime",
   model: "gpt-realtime-2.1",
   instructions: [
-    "You are Hermes, Dylan's concise and capable personal voice assistant.",
-    "Speak naturally, warmly, and briefly. Do not sound like a menu or repeat the user's request.",
-    "Let the user finish speaking. Ask one clear follow-up when required information is missing.",
-    "Use only the provided functions for external actions.",
-    "For apps or workflows not in the destination list, use run_shortcut only when the user names an existing Apple Shortcut.",
-    "A function call prepares an action for review; it never means the action has already happened.",
-    "Never claim a message was sent, a note was saved, or an app action completed until the client reports success.",
-    "Notes are saved inside Hermes with save_note; use prepare_note only when the user names Apple Notes.",
-    "For reminders use create_reminder with an ISO 8601 due time when the user gives one; today's date is provided in the session.",
-    "When the user asks to send an email, use send_email; use prepare_email only when they ask for a draft to review in their mail app. Either way the client asks the user to confirm first.",
-    "search_web, search_notes, list_reminders and get_datetime read only: they run immediately, need no confirmation, and return their result to you. Answer from their result rather than from memory.",
-    "Use search_web whenever the answer depends on current facts — news, prices, scores, weather, opening hours, anything after your training data. Never guess at these, and never state a fact you did not verify as though you had.",
-    "Call get_datetime before any reasoning about today, tomorrow, or elapsed time; do not assume the date.",
-    "Summarise what a tool returned in one or two spoken sentences. Do not read out URLs.",
+    "You are the voice of Hermes, Dylan's personal assistant.",
+    "Hermes itself — its knowledge, tools, and memory — runs elsewhere and answers only through the ask_hermes function. You are the ears and the mouth: you never answer on your own, and you never guess what Hermes would say.",
+    "Every time the user finishes speaking, call ask_hermes with what they said, word for word, in their own language and without paraphrasing. Do this for questions, requests, small talk, and one-word replies such as yes, no, confirm, or cancel — Hermes and the phone decide what they mean.",
+    "The user hears silence while Hermes works, so before the call say two or three words of acknowledgement, varied and natural, never a full sentence. Then make the call.",
+    "When the function returns, speak the reply as your own words: faithfully, completely, and without adding, softening, or commenting on it. Never refer to Hermes as someone else; you are Hermes.",
+    "If the reply says the phone is showing something for approval, ask the user to say confirm or cancel, and do not claim anything was sent, saved, or opened.",
+    "If the function reports that Hermes could not answer, tell the user in one short sentence and stop.",
+    "Speak naturally, warmly, and briefly. Let the user finish speaking, and do not repeat their request back to them.",
   ].join(" "),
   audio: {
     input: {
       transcription: {
         model: "gpt-4o-mini-transcribe",
       },
+      // "low" makes the model wait for a complete thought before it answers.
+      // "high" cut Dylan off mid-sentence and treated room noise as a turn,
+      // which is the single worst failure mode for a hands-free assistant:
+      // a late reply is a pause, an early one loses what he was saying.
       turn_detection: {
         type: "semantic_vad",
-        eagerness: "high",
+        eagerness: "low",
         create_response: true,
         interrupt_response: true,
       },
@@ -37,182 +41,19 @@ export const realtimeSession = Object.freeze({
   tools: [
     {
       type: "function",
-      name: "prepare_message",
-      description: "Prepare an iPhone Messages draft for the user to review and send.",
+      name: "ask_hermes",
+      description:
+        "Send what the user just said to Hermes, word for word, and receive Hermes's reply to speak. "
+        + "Call this for everything the user says; never answer without it.",
       parameters: {
         type: "object",
         properties: {
-          body: { type: "string", description: "The complete message body." },
-        },
-        required: ["body"],
-        additionalProperties: false,
-      },
-    },
-    {
-      type: "function",
-      name: "prepare_email",
-      description: "Prepare an email draft for the user to review in their mail app.",
-      parameters: {
-        type: "object",
-        properties: {
-          recipient: { type: "string", description: "One recipient email address." },
-          subject: { type: "string", description: "The email subject." },
-          body: { type: "string", description: "The complete email body." },
-        },
-        required: ["recipient", "subject", "body"],
-        additionalProperties: false,
-      },
-    },
-    {
-      type: "function",
-      name: "send_email",
-      description: "Send an email from the user's connected Gmail account after the user confirms.",
-      parameters: {
-        type: "object",
-        properties: {
-          recipient: { type: "string", description: "One recipient email address." },
-          subject: { type: "string", description: "The email subject." },
-          body: { type: "string", description: "The complete email body." },
-        },
-        required: ["recipient", "subject", "body"],
-        additionalProperties: false,
-      },
-    },
-    {
-      type: "function",
-      name: "prepare_note",
-      description: "Prepare note text for the user to review and share to Apple Notes.",
-      parameters: {
-        type: "object",
-        properties: {
-          body: { type: "string", description: "The complete note text." },
-        },
-        required: ["body"],
-        additionalProperties: false,
-      },
-    },
-    {
-      type: "function",
-      name: "save_note",
-      description: "Save a note inside Hermes after the user confirms. Preferred over prepare_note.",
-      parameters: {
-        type: "object",
-        properties: {
-          body: { type: "string", description: "The complete note text." },
-        },
-        required: ["body"],
-        additionalProperties: false,
-      },
-    },
-    {
-      type: "function",
-      name: "create_reminder",
-      description: "Create a reminder in the iPhone Reminders app after the user confirms.",
-      parameters: {
-        type: "object",
-        properties: {
-          title: { type: "string", description: "What to remind the user about, as a short imperative." },
-          due: {
+          request: {
             type: "string",
-            description: "Optional due time as an ISO 8601 timestamp with timezone offset, e.g. 2026-08-27T09:00:00-04:00.",
+            description: "Exactly what the user said, in their own words and language.",
           },
         },
-        required: ["title"],
-        additionalProperties: false,
-      },
-    },
-    {
-      type: "function",
-      name: "open_destination",
-      description: "Prepare a supported destination to open after user confirmation.",
-      parameters: {
-        type: "object",
-        properties: {
-          destination: {
-            type: "string",
-            enum: [
-              "gmail",
-              "settings",
-              "maps",
-              "calendar",
-              "music",
-              "youtube",
-              "spotify",
-            ],
-            description: "The allowlisted destination to open.",
-          },
-        },
-        required: ["destination"],
-        additionalProperties: false,
-      },
-    },
-    {
-      type: "function",
-      name: "search_web",
-      description:
-        "Search the web and return a short spoken answer with sources. Runs immediately without user confirmation. "
-        + "Use for anything current: news, weather, prices, scores, opening hours, or facts newer than your training data.",
-      parameters: {
-        type: "object",
-        properties: {
-          query: { type: "string", description: "What to search for, as a natural-language question." },
-        },
-        required: ["query"],
-        additionalProperties: false,
-      },
-    },
-    {
-      type: "function",
-      name: "search_notes",
-      description:
-        "Search the notes saved in Hermes and return the matches. Runs immediately without user confirmation. "
-        + "Use when the user asks what they wrote down or saved.",
-      parameters: {
-        type: "object",
-        properties: {
-          query: { type: "string", description: "Words to look for. Empty returns the most recent notes." },
-        },
-        required: ["query"],
-        additionalProperties: false,
-      },
-    },
-    {
-      type: "function",
-      name: "list_reminders",
-      description:
-        "List the user's upcoming reminders. Runs immediately without user confirmation. "
-        + "Use when the user asks what they have coming up or what they need to do.",
-      parameters: {
-        type: "object",
-        properties: {},
-        additionalProperties: false,
-      },
-    },
-    {
-      type: "function",
-      name: "get_datetime",
-      description:
-        "Get the current date, time, and time zone on the user's iPhone. Runs immediately without user confirmation. "
-        + "Call this before any reasoning that depends on today's date.",
-      parameters: {
-        type: "object",
-        properties: {},
-        additionalProperties: false,
-      },
-    },
-    {
-      type: "function",
-      name: "run_shortcut",
-      description: "Prepare an existing Apple Shortcut to run after explicit user confirmation.",
-      parameters: {
-        type: "object",
-        properties: {
-          name: {
-            type: "string",
-            description: "The exact name of an Apple Shortcut that already exists on the iPhone.",
-          },
-        },
-        required: ["name"],
+        required: ["request"],
         additionalProperties: false,
       },
     },

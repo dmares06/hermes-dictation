@@ -41,6 +41,17 @@ final class SharedState {
     var emailDelivery: EmailDelivery {
         didSet { defaults.set(emailDelivery.rawValue, forKey: Keys.emailDelivery) }
     }
+    /// Where the Hermes Agent gateway is reached; editable so the phone can
+    /// follow the agent if it moves off the Mac mini.
+    var hermesServerURL: String {
+        didSet { defaults.set(hermesServerURL, forKey: Keys.hermesServerURL) }
+    }
+    /// A model to ask Hermes for on the phone's requests only, e.g. a faster
+    /// one for speech. Empty means whatever the gateway uses by default;
+    /// nothing here changes Hermes for its other channels.
+    var hermesVoiceModel: String {
+        didSet { defaults.set(hermesVoiceModel, forKey: Keys.hermesVoiceModel) }
+    }
     var keyboardColor: AppearanceColor {
         didSet { appearanceStore.keyboardColor = keyboardColor }
     }
@@ -74,6 +85,9 @@ final class SharedState {
         self.emailDelivery = EmailDelivery(
             rawValue: self.defaults.string(forKey: Keys.emailDelivery) ?? ""
         ) ?? .mailApp
+        self.hermesVoiceModel = self.defaults.string(forKey: Keys.hermesVoiceModel) ?? HermesAgentClient.defaultVoiceModel
+        let storedServer = self.defaults.string(forKey: Keys.hermesServerURL) ?? ""
+        self.hermesServerURL = storedServer.isEmpty ? HermesAgentClient.defaultServerURL : storedServer
         self.keyboardColor = self.appearanceStore.keyboardColor
         self.recordButtonColor = self.appearanceStore.recordButtonColor
     }
@@ -95,6 +109,8 @@ final class SharedState {
         static let emailDelivery = "emailDelivery"
         static let agentUsesSpeaker = "agentUsesSpeaker"
         static let modelFolderPath = "modelFolderPath"
+        static let hermesServerURL = "hermesServerURL"
+        static let hermesVoiceModel = "hermesVoiceModel"
     }
 }
 

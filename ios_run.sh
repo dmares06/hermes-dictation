@@ -8,7 +8,7 @@
 #   ./ios_run.sh --no-launch          # build + install only
 #   ./ios_run.sh --build-only         # build only
 #   ./ios_run.sh --latency            # report the last dictation's timings
-#   ./ios_run.sh --keyboard           # report the keyboard's last dictation attempt
+#   ./ios_run.sh --agent-log          # print the agent's recent turn trail
 #
 # Note: devicectl prints "Failed to load provisioning parameter list ...
 # No provider was found." on every invocation. It is harmless noise, not a
@@ -26,7 +26,7 @@ DEVICE_ID="${DEVICE_ID:-}"
 DO_INSTALL=1
 DO_LAUNCH=1
 SHOW_LATENCY=0
-SHOW_KEYBOARD=0
+SHOW_AGENT=0
 APP_GROUP="group.com.dmares06.whisperdict"
 
 while [ $# -gt 0 ]; do
@@ -36,7 +36,7 @@ while [ $# -gt 0 ]; do
         --no-launch) DO_LAUNCH=0; shift ;;
         --build-only) DO_LAUNCH=0; DO_INSTALL=0; shift ;;
         --latency) SHOW_LATENCY=1; shift ;;
-        --keyboard) SHOW_KEYBOARD=1; shift ;;
+        --agent-log) SHOW_AGENT=1; shift ;;
         -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 2 ;;
     esac
@@ -92,45 +92,6 @@ echo "📱 Target: ${DEVICE_NAME} (${DEVICE_ID})"
 # Where the last transcription's time actually went. The app writes the
 # breakdown into the app group after every dictation; without pulling it back,
 # any latency claim is guesswork.
-# A keyboard extension's logs cannot be streamed from a Mac, so the keyboard
-# records what its microphone attempt did into the app group instead.
-if [ "$SHOW_KEYBOARD" -eq 1 ]; then
-    KBD_DIR="$(mktemp -d -t whisperdict-keyboard)"
-    if ! xcrun devicectl device copy from \
-        --device "$DEVICE_ID" \
-        --domain-type appGroupDataContainer \
-        --domain-identifier "$APP_GROUP" \
-        --source "Library/Preferences/${APP_GROUP}.plist" \
-        --destination "${KBD_DIR}/${APP_GROUP}.plist" >/dev/null 2>&1; then
-        echo "❌ Could not read the app group. Unlock the phone first." >&2
-        rm -rf "$KBD_DIR"
-        exit 1
-    fi
-    python3 - "${KBD_DIR}/${APP_GROUP}.plist" << 'KEYBOARD_PY'
-import datetime, plistlib, sys
-
-with open(sys.argv[1], "rb") as handle:
-    record = plistlib.load(handle).get("lastKeyboardDictation")
-
-if not record:
-    print("The keyboard has not tried to dictate on this build yet.")
-    raise SystemExit(0)
-
-at = datetime.datetime.fromtimestamp(record["at"]).strftime("%H:%M:%S")
-print(f"Keyboard dictation at {at}: {record['outcome']}")
-if record.get("detail"):
-    print(f"  detail            {record['detail']}")
-for label, key in (
-    ("full access", "hasFullAccess"),
-    ("microphone", "microphone"),
-    ("speech", "speech"),
-    ("recognizer ready", "recognizerAvailable"),
-):
-    print(f"  {label:<17} {record.get(key)}")
-KEYBOARD_PY
-    rm -rf "$KBD_DIR"
-    exit 0
-fi
 
 if [ "$SHOW_LATENCY" -eq 1 ]; then
     LATENCY_DIR="$(mktemp -d -t whisperdict-latency)"
@@ -172,6 +133,31 @@ LATENCY_PY
     exit 0
 fi
 
+if [ "$SHOW_AGENT" -eq 1 ]; then
+    AGENT_DIR="$(mktemp -d -t whisperdict-agent)"
+    if ! xcrun devicectl device copy from \
+        --device "$DEVICE_ID" \
+        --domain-type appGroupDataContainer \
+        --domain-identifier "$APP_GROUP" \
+        --source "Library/Preferences/${APP_GROUP}.plist" \
+        --destination "${AGENT_DIR}/${APP_GROUP}.plist" >/dev/null 2>&1; then
+        echo "Could not read the app group from the device (is it unlocked and connected?)." >&2
+        rm -rf "$AGENT_DIR"
+        exit 1
+    fi
+    python3 - "${AGENT_DIR}/${APP_GROUP}.plist" << 'AGENT_PY'
+import plistlib, sys
+with open(sys.argv[1], "rb") as handle:
+    trail = plistlib.load(handle).get("agentTurnTrail") or []
+if not trail:
+    print("No agent turns recorded yet.")
+for line in trail[-60:]:
+    print(f"  {line}")
+AGENT_PY
+    rm -rf "$AGENT_DIR"
+    exit 0
+fi
+
 # The app authenticates to the Hermes backend with WHISPERDICT_CLIENT_TOKEN,
 # expanded into Info.plist at build time. Nothing in the project supplies it,
 # so resolve it here: an exported variable wins, otherwise the production env
@@ -190,6 +176,18 @@ if [ -z "${WHISPERDICT_CLIENT_TOKEN:-}" ]; then
     TOKEN_SETTING=()
 else
     TOKEN_SETTING=("WHISPERDICT_CLIENT_TOKEN=${WHISPERDICT_CLIENT_TOKEN}")
+fi
+
+# The Hermes Agent gateway lives on this Mac, so its API key can be read
+# straight from the Hermes config instead of being copied into a file.
+if [ -z "${WHISPERDICT_HERMES_KEY:-}" ] && command -v hermes >/dev/null 2>&1; then
+    WHISPERDICT_HERMES_KEY="$(hermes config get API_SERVER_KEY 2>/dev/null | tail -1)"
+fi
+if [ -n "${WHISPERDICT_HERMES_KEY:-}" ]; then
+    TOKEN_SETTING+=("WHISPERDICT_HERMES_KEY=${WHISPERDICT_HERMES_KEY}")
+else
+    echo "⚠️  No WHISPERDICT_HERMES_KEY found; the Hermes Agent mode will not work in this build." >&2
+    echo "   Run this script on the Mac that hosts Hermes, or export WHISPERDICT_HERMES_KEY." >&2
 fi
 
 echo "🔨 Building ${SCHEME} (${CONFIGURATION})..."

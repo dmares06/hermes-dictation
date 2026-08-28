@@ -38,8 +38,12 @@ final class ResidentAudioKeepalive {
             NotificationCenter.default.removeObserver(configurationObserver)
             self.configurationObserver = nil
         }
-        engine?.stop()
-        engine = nil
+        // Only release a session this engine holds. A stop that arrives after
+        // someone else has taken the session — the agent's recorder, say —
+        // must not deactivate it out from under them.
+        guard let engine else { return }
+        engine.stop()
+        self.engine = nil
         try? session.setActive(false, options: .notifyOthersOnDeactivation)
     }
 

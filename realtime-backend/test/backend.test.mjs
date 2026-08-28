@@ -18,46 +18,38 @@ test("client authorization requires an exact bearer token", () => {
 test("session uses responsive semantic turn detection and a natural voice", () => {
   assert.equal(realtimeSession.model, "gpt-realtime-2.1");
   assert.equal(realtimeSession.audio.input.turn_detection.type, "semantic_vad");
-  assert.equal(realtimeSession.audio.input.turn_detection.eagerness, "high");
+  assert.equal(realtimeSession.audio.input.turn_detection.eagerness, "low");
   assert.equal(realtimeSession.audio.output.voice, "marin");
   assert.equal(realtimeSession.audio.output.speed, 1.08);
   assert.equal(realtimeSession.audio.input.transcription.model, "gpt-4o-mini-transcribe");
 });
 
-// The read-only tools run without asking the user, so which tools are in
-// which group is a safety boundary, not a detail. Anything that acts on the
-// user's behalf has to stay in the confirmed group.
-const REVIEWED_TOOLS = [
-  "prepare_message",
-  "prepare_email",
-  "send_email",
-  "prepare_note",
-  "save_note",
-  "create_reminder",
-  "open_destination",
-  "run_shortcut",
-];
-const READ_ONLY_TOOLS = ["search_web", "search_notes", "list_reminders", "get_datetime"];
-
-test("session exposes only the allowlisted actions", () => {
-  assert.deepEqual(
-    realtimeSession.tools.map((tool) => tool.name).sort(),
-    [...REVIEWED_TOOLS, ...READ_ONLY_TOOLS].sort(),
-  );
+// Realtime is the ears and the mouth; Hermes Agent on the Mac is the only
+// brain. The session therefore exposes exactly one tool, and every phone
+// action (messages, email, notes, reminders, opening apps) arrives inside
+// Hermes's reply, where the app validates it and asks for confirmation.
+test("the session's only tool relays the user's words to Hermes", () => {
+  assert.deepEqual(realtimeSession.tools.map((tool) => tool.name), ["ask_hermes"]);
   assert.equal(realtimeSession.tool_choice, "auto");
 
-  const openDestination = realtimeSession.tools.find(
-    (tool) => tool.name === "open_destination",
-  );
-  assert.deepEqual(openDestination.parameters.properties.destination.enum, [
-    "gmail",
-    "settings",
-    "maps",
-    "calendar",
-    "music",
-    "youtube",
-    "spotify",
-  ]);
+  const [askHermes] = realtimeSession.tools;
+  assert.equal(askHermes.type, "function");
+  assert.deepEqual(askHermes.parameters.required, ["request"]);
+  assert.equal(askHermes.parameters.properties.request.type, "string");
+  assert.equal(askHermes.parameters.additionalProperties, false);
+  assert.match(askHermes.description, /word for word/i);
+});
+
+test("the voice never answers on its own or claims an action happened", () => {
+  const { instructions } = realtimeSession;
+  assert.match(instructions, /never answer on your own/i);
+  assert.match(instructions, /word for word/i);
+  assert.match(instructions, /confirm or cancel/i);
+  assert.match(instructions, /do not claim/i);
+  assert.match(instructions, /ask_hermes/);
+  // The acknowledgement covers the seconds Hermes takes; it must stay tiny
+  // or every turn starts with filler.
+  assert.match(instructions, /two or three words/i);
 });
 
 test("SDP parser accepts an offer and rejects invalid or oversized input", async () => {
@@ -156,27 +148,3 @@ function restoreEnvironment(name, value) {
     process.env[name] = value;
   }
 }
-
-test("read-only tools take no action on the user's behalf", () => {
-  // A tool that only reads may skip confirmation. One that writes, sends, or
-  // opens something must not be in this group, whatever it is called.
-  for (const name of READ_ONLY_TOOLS) {
-    const tool = realtimeSession.tools.find((candidate) => candidate.name === name);
-    assert.ok(tool, `${name} is missing from the session`);
-    assert.match(tool.description, /without user confirmation/);
-    assert.doesNotMatch(tool.name, /^(send|save|create|open|run|prepare)_/);
-  }
-});
-
-test("every tool that acts still requires confirmation", () => {
-  for (const name of REVIEWED_TOOLS) {
-    const tool = realtimeSession.tools.find((candidate) => candidate.name === name);
-    assert.ok(tool, `${name} is missing from the session`);
-    assert.doesNotMatch(tool.description, /without user confirmation/);
-  }
-});
-
-test("the model is told to verify current facts rather than guess", () => {
-  assert.match(realtimeSession.instructions, /search_web/);
-  assert.match(realtimeSession.instructions, /never state a fact you did not verify/i);
-});

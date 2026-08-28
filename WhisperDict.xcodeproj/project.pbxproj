@@ -60,12 +60,20 @@
 		C10000000000000000000001 /* ListeningWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000011 /* ListeningWindow.swift */; };
 		B80000000000000000000001 /* MessageRecipients.swift in Sources */ = {isa = PBXBuildFile; fileRef = B80000000000000000000011 /* MessageRecipients.swift */; };
 		B60000000000000000000001 /* RealtimeAgentClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60000000000000000000011 /* RealtimeAgentClient.swift */; };
+		E10000000000000000000006 /* HermesAgentClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000016 /* HermesAgentClient.swift */; };
 		BD0000000000000000000001 /* DictationLatencyLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD0000000000000000000011 /* DictationLatencyLog.swift */; };
+		E10000000000000000000008 /* AgentTurnLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000018 /* AgentTurnLog.swift */; };
 		B60000000000000000000002 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = B60000000000000000000031 /* WebRTC */; };
 		B70000000000000000000001 /* HermesConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B70000000000000000000011 /* HermesConversationStore.swift */; };
+		E10000000000000000000007 /* HermesStreamedSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000017 /* HermesStreamedSpeech.swift */; };
+		E100000000000000000000A1 /* HermesVoiceRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = E100000000000000000000A2 /* HermesVoiceRelay.swift */; };
+E100000000000000000000A3 /* RealtimeResponseGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E100000000000000000000A4 /* RealtimeResponseGate.swift */; };
+		E10000000000000000000005 /* HermesActionBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000015 /* HermesActionBlock.swift */; };
+		E10000000000000000000004 /* SpokenText.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000014 /* SpokenText.swift */; };
+		E10000000000000000000003 /* HermesChatStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000013 /* HermesChatStream.swift */; };
+		E10000000000000000000002 /* HermesMemoryBriefing.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000012 /* HermesMemoryBriefing.swift */; };
+		E10000000000000000000001 /* HermesMemoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000011 /* HermesMemoryStore.swift */; };
 		BE0000000000000000000001 /* KeyboardAutocorrect.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE0000000000000000000011 /* KeyboardAutocorrect.swift */; };
-		D10000000000000000000002 /* KeyboardDictationSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000002 /* KeyboardDictationSession.swift */; };
-		D30000000000000000000002 /* KeyboardSpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000000000000000000002 /* KeyboardSpeechRecognizer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -114,7 +122,6 @@
 		A10000000000000000000015 /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
 		A10000000000000000000016 /* KeyboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardView.swift; sourceTree = "<group>"; };
 		BF0000000000000000000011 /* SystemWordChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemWordChecker.swift; sourceTree = "<group>"; };
-		D40000000000000000000002 /* KeyboardSpeechRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardSpeechRecognizer.swift; sourceTree = "<group>"; };
 		A10000000000000000000018 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A10000000000000000000019 /* WhisperDictKeyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WhisperDictKeyboard.entitlements; sourceTree = "<group>"; };
 		A10000000000000000000045 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -151,10 +158,19 @@
 		C10000000000000000000011 /* ListeningWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningWindow.swift; sourceTree = "<group>"; };
 		B80000000000000000000011 /* MessageRecipients.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageRecipients.swift; sourceTree = "<group>"; };
 		B60000000000000000000011 /* RealtimeAgentClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeAgentClient.swift; sourceTree = "<group>"; };
+		E10000000000000000000016 /* HermesAgentClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesAgentClient.swift; sourceTree = "<group>"; };
 		BD0000000000000000000011 /* DictationLatencyLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationLatencyLog.swift; sourceTree = "<group>"; };
+		E10000000000000000000018 /* AgentTurnLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTurnLog.swift; sourceTree = "<group>"; };
 		B70000000000000000000011 /* HermesConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesConversationStore.swift; sourceTree = "<group>"; };
+		E10000000000000000000017 /* HermesStreamedSpeech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesStreamedSpeech.swift; sourceTree = "<group>"; };
+		E100000000000000000000A2 /* HermesVoiceRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesVoiceRelay.swift; sourceTree = "<group>"; };
+E100000000000000000000A4 /* RealtimeResponseGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeResponseGate.swift; sourceTree = "<group>"; };
+		E10000000000000000000015 /* HermesActionBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesActionBlock.swift; sourceTree = "<group>"; };
+		E10000000000000000000014 /* SpokenText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpokenText.swift; sourceTree = "<group>"; };
+		E10000000000000000000013 /* HermesChatStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesChatStream.swift; sourceTree = "<group>"; };
+		E10000000000000000000012 /* HermesMemoryBriefing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesMemoryBriefing.swift; sourceTree = "<group>"; };
+		E10000000000000000000011 /* HermesMemoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesMemoryStore.swift; sourceTree = "<group>"; };
 		BE0000000000000000000011 /* KeyboardAutocorrect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardAutocorrect.swift; sourceTree = "<group>"; };
-		D20000000000000000000002 /* KeyboardDictationSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardDictationSession.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -199,7 +215,9 @@
 				A1000000000000000000006C /* VoiceAgentController.swift */,
 				A1000000000000000000006D /* VoiceAgentView.swift */,
 				B60000000000000000000011 /* RealtimeAgentClient.swift */,
+				E10000000000000000000016 /* HermesAgentClient.swift */,
 				BD0000000000000000000011 /* DictationLatencyLog.swift */,
+				E10000000000000000000018 /* AgentTurnLog.swift */,
 				B20000000000000000000013 /* BackgroundDictationIntent.swift */,
 				B40000000000000000000011 /* OnboardingView.swift */,
 				D60000000000000000000011 /* HermesBackendClient.swift */,
@@ -222,7 +240,6 @@
 				A10000000000000000000015 /* KeyboardViewController.swift */,
 				A10000000000000000000016 /* KeyboardView.swift */,
 				BF0000000000000000000011 /* SystemWordChecker.swift */,
-				D40000000000000000000002 /* KeyboardSpeechRecognizer.swift */,
 				A10000000000000000000018 /* Info.plist */,
 				A10000000000000000000019 /* WhisperDictKeyboard.entitlements */,
 			);
@@ -244,8 +261,15 @@
 			isa = PBXGroup;
 			children = (
 				B70000000000000000000011 /* HermesConversationStore.swift */,
+				E10000000000000000000017 /* HermesStreamedSpeech.swift */,
+				E100000000000000000000A2 /* HermesVoiceRelay.swift */,
+				E100000000000000000000A4 /* RealtimeResponseGate.swift */,
+				E10000000000000000000015 /* HermesActionBlock.swift */,
+				E10000000000000000000014 /* SpokenText.swift */,
+				E10000000000000000000013 /* HermesChatStream.swift */,
+				E10000000000000000000012 /* HermesMemoryBriefing.swift */,
+				E10000000000000000000011 /* HermesMemoryStore.swift */,
 				BE0000000000000000000011 /* KeyboardAutocorrect.swift */,
-				D20000000000000000000002 /* KeyboardDictationSession.swift */,
 				A10000000000000000000065 /* AppearanceSettings.swift */,
 				A10000000000000000000053 /* TranscriptCleaner.swift */,
 				A10000000000000000000054 /* TranscriptStore.swift */,
@@ -425,6 +449,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				B70000000000000000000001 /* HermesConversationStore.swift in Sources */,
+				E10000000000000000000007 /* HermesStreamedSpeech.swift in Sources */,
+				E100000000000000000000A1 /* HermesVoiceRelay.swift in Sources */,
+				E100000000000000000000A3 /* RealtimeResponseGate.swift in Sources */,
+				E10000000000000000000005 /* HermesActionBlock.swift in Sources */,
+				E10000000000000000000004 /* SpokenText.swift in Sources */,
+				E10000000000000000000003 /* HermesChatStream.swift in Sources */,
+				E10000000000000000000002 /* HermesMemoryBriefing.swift in Sources */,
+				E10000000000000000000001 /* HermesMemoryStore.swift in Sources */,
 				A1000000000000000000002A /* WhisperDictApp.swift in Sources */,
 				A1000000000000000000002B /* ContentView.swift in Sources */,
 				A1000000000000000000002C /* SharedState.swift in Sources */,
@@ -441,7 +473,9 @@
 				A10000000000000000000069 /* VoiceAgentController.swift in Sources */,
 				A1000000000000000000006A /* VoiceAgentView.swift in Sources */,
 				B60000000000000000000001 /* RealtimeAgentClient.swift in Sources */,
+				E10000000000000000000006 /* HermesAgentClient.swift in Sources */,
 				BD0000000000000000000001 /* DictationLatencyLog.swift in Sources */,
+				E10000000000000000000008 /* AgentTurnLog.swift in Sources */,
 				A1000000000000000000006E /* VoiceTurnDetector.swift in Sources */,
 				B20000000000000000000002 /* BackgroundDictationState.swift in Sources */,
 				B20000000000000000000005 /* WhisperDictActivityAttributes.swift in Sources */,
@@ -470,8 +504,6 @@
 				A10000000000000000000032 /* KeyboardView.swift in Sources */,
 				BF0000000000000000000001 /* SystemWordChecker.swift in Sources */,
 				BE0000000000000000000001 /* KeyboardAutocorrect.swift in Sources */,
-				D10000000000000000000002 /* KeyboardDictationSession.swift in Sources */,
-				D30000000000000000000002 /* KeyboardSpeechRecognizer.swift in Sources */,
 				A10000000000000000000061 /* Keyboard TranscriptStore.swift in Sources */,
 				A10000000000000000000062 /* KeyboardLayout.swift in Sources */,
 				B50000000000000000000001 /* KeyboardTextProcessor.swift in Sources */,

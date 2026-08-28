@@ -27,6 +27,20 @@ struct SettingsView: View {
                 Text("After you use WhisperDict, it keeps the microphone open in the background for this long so the keyboard's Talk button, the Action Button, and the Live Activity can start a recording without leaving the app you are in. The orange microphone indicator stays on while it is listening; nothing is saved between dictations. Uses some battery while active.")
             }
             Section {
+                TextField("Hermes server", text: Bindable(state).hermesServerURL)
+                    .textContentType(.URL)
+                    .keyboardType(.URL)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                TextField("Voice model (optional)", text: Bindable(state).hermesVoiceModel)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+            } header: {
+                Text("Hermes Agent")
+            } footer: {
+                Text("Hermes Agent on your Mac is the brain: every word you say goes to it, with its full set of tools, memory, and skills, and OpenAI Realtime is only the voice. Reached over your tailnet; the Mac has to be awake. The voice model, e.g. openai/gpt-5-mini, is asked for on this phone's requests only and leaves Hermes unchanged everywhere else.")
+            }
+            Section {
                 Picker("Email", selection: Bindable(state).emailDelivery) {
                     ForEach(EmailDelivery.allCases) { delivery in
                         Text(delivery.title).tag(delivery)
