@@ -72,14 +72,3 @@ final class RealtimeResponseGateTests: XCTestCase {
         XCTAssertTrue(gate.requestResponse())
     }
 }
-
-extension RealtimeResponseGateTests {
-    func testIdleProbeSendsOnlyWhenFreeAndNeverQueues() {
-        var gate = RealtimeResponseGate()
-        XCTAssertTrue(gate.requestResponseIfIdle())
-        XCTAssertTrue(gate.responseActive)
-        XCTAssertFalse(gate.requestResponseIfIdle(), "a second one while busy is dropped")
-        XCTAssertFalse(gate.responsePending, "dropped, not deferred: a progress line is stale by the time the line frees up")
-        XCTAssertFalse(gate.noteResponseDone())
-    }
-}

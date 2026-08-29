@@ -47,9 +47,11 @@ test("the voice never answers on its own or claims an action happened", () => {
   assert.match(instructions, /confirm or cancel/i);
   assert.match(instructions, /do not claim/i);
   assert.match(instructions, /ask_hermes/);
-  // The acknowledgement covers the seconds Hermes takes; it must stay tiny
-  // or every turn starts with filler.
-  assert.match(instructions, /two or three words/i);
+  // The user asked for answers, not narration: the voice must wait in
+  // silence rather than announce that it is checking or still working.
+  assert.match(instructions, /call the function silently/i);
+  assert.match(instructions, /never announce that you are checking/i);
+  assert.doesNotMatch(instructions, /words of acknowledgement/i);
 });
 
 test("SDP parser accepts an offer and rejects invalid or oversized input", async () => {

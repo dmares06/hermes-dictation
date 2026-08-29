@@ -69,7 +69,6 @@ E100000000000000000000B1 /* PlaceContext.swift in Sources */ = {isa = PBXBuildFi
 		E10000000000000000000007 /* HermesStreamedSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000017 /* HermesStreamedSpeech.swift */; };
 		E100000000000000000000A1 /* HermesVoiceRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = E100000000000000000000A2 /* HermesVoiceRelay.swift */; };
 E100000000000000000000A7 /* HermesDictationHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = E100000000000000000000A8 /* HermesDictationHandoff.swift */; };
-E100000000000000000000A5 /* HermesProgressNarrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E100000000000000000000A6 /* HermesProgressNarrator.swift */; };
 E100000000000000000000A3 /* RealtimeResponseGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E100000000000000000000A4 /* RealtimeResponseGate.swift */; };
 		E10000000000000000000005 /* HermesActionBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000015 /* HermesActionBlock.swift */; };
 		E10000000000000000000004 /* SpokenText.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000014 /* SpokenText.swift */; };
@@ -169,7 +168,6 @@ E100000000000000000000B2 /* PlaceContext.swift */ = {isa = PBXFileReference; las
 		E10000000000000000000017 /* HermesStreamedSpeech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesStreamedSpeech.swift; sourceTree = "<group>"; };
 		E100000000000000000000A2 /* HermesVoiceRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesVoiceRelay.swift; sourceTree = "<group>"; };
 E100000000000000000000A8 /* HermesDictationHandoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDictationHandoff.swift; sourceTree = "<group>"; };
-E100000000000000000000A6 /* HermesProgressNarrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesProgressNarrator.swift; sourceTree = "<group>"; };
 E100000000000000000000A4 /* RealtimeResponseGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeResponseGate.swift; sourceTree = "<group>"; };
 		E10000000000000000000015 /* HermesActionBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesActionBlock.swift; sourceTree = "<group>"; };
 		E10000000000000000000014 /* SpokenText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpokenText.swift; sourceTree = "<group>"; };
@@ -271,7 +269,6 @@ E100000000000000000000A4 /* RealtimeResponseGate.swift */ = {isa = PBXFileRefere
 				E10000000000000000000017 /* HermesStreamedSpeech.swift */,
 				E100000000000000000000A2 /* HermesVoiceRelay.swift */,
 				E100000000000000000000A8 /* HermesDictationHandoff.swift */,
-				E100000000000000000000A6 /* HermesProgressNarrator.swift */,
 				E100000000000000000000A4 /* RealtimeResponseGate.swift */,
 				E10000000000000000000015 /* HermesActionBlock.swift */,
 				E10000000000000000000014 /* SpokenText.swift */,
@@ -461,7 +458,6 @@ E100000000000000000000A4 /* RealtimeResponseGate.swift */ = {isa = PBXFileRefere
 				E10000000000000000000007 /* HermesStreamedSpeech.swift in Sources */,
 				E100000000000000000000A1 /* HermesVoiceRelay.swift in Sources */,
 				E100000000000000000000A7 /* HermesDictationHandoff.swift in Sources */,
-				E100000000000000000000A5 /* HermesProgressNarrator.swift in Sources */,
 				E100000000000000000000A3 /* RealtimeResponseGate.swift in Sources */,
 				E10000000000000000000005 /* HermesActionBlock.swift in Sources */,
 				E10000000000000000000004 /* SpokenText.swift in Sources */,

@@ -101,7 +101,11 @@ struct HermesAgentClient {
         to three sentences unless they ask for detail. Greetings, small talk, and questions you can \
         answer from what you already know need no tools: answer straight away. Your tools are there \
         for anything that depends on current facts or on your memory, but they hear silence while a \
-        tool runs, so prefer quick ones and never narrate what you are about to do. \
+        tool runs, so prefer quick ones and never narrate what you are about to do: no "let me check", \
+        no "one moment", no describing a search or a tool — your reply is the answer itself and \
+        nothing else. Answer only the newest message. If it is garbled, a stray sound, or clearly \
+        not a request, say in a few words that you didn't catch it; never guess at what was meant \
+        and never answer with unrelated work, inboxes, or tasks they did not just ask about. \
         When they want something current — weather, flights, prices, news, hours — do one web search \
         and answer from its results; open a page only if the results truly lack the answer, and do not \
         look through skills, past sessions, or notes for these. Give the two or three best options in \
