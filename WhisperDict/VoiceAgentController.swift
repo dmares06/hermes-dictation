@@ -98,6 +98,14 @@ final class VoiceAgentController {
     /// talking, so they are one thought — and only the newest is spoken.
     private var relayQueue: [RelayWaiter] = []
     private var relayWorker: Task<Void, Never>?
+    private var narrator = HermesProgressNarrator()
+    /// The phone's city, folded into every Hermes prompt.
+    let place = PlaceContext()
+    /// Typed messages outside a call share one Hermes session per launch,
+    /// so a follow-up typed a minute later still has its context.
+    private var textConfiguration: HermesAgentClient.Configuration?
+    private var textConversationID: UUID?
+    private(set) var isTypingTurn = false
 
     private struct RelayWaiter {
         let request: String
@@ -296,6 +304,7 @@ final class VoiceAgentController {
             messages.append(VoiceAgentMessage(role: .hermes, text: error.localizedDescription))
             return
         }
+        place.refresh()
         onWillTakeAudioSession?()
         conversationActive = true
         conversationID = id
@@ -406,7 +415,7 @@ final class VoiceAgentController {
         var completedText: String?
         var failure: String?
         do {
-            for try await event in hermesClient.reply(to: text, configuration: configuration) {
+            for try await event in hermesClient.reply(to: text, configuration: configuration, place: place.spokenDescription) {
                 guard conversationID == expected else { return }
                 switch event {
                 case .created:
@@ -767,7 +776,7 @@ final class VoiceAgentController {
         relayWorker = nil
         let waiting = relayQueue
         relayQueue = []
-        for waiter in waiting { waiter.continuation.resume(returning: .superseded) }
+        for waiter in waiting { waiter.continuation.resume(returning: .abandoned) }
     }
 
     /// One turn against the gateway, returned whole as the tool result: the
@@ -778,21 +787,57 @@ final class VoiceAgentController {
         }
         phase = .thinking
         activity = nil
+        let outcome = await streamHermes(request, configuration: configuration) { [weak self] in
+            self?.conversationID == expected
+        }
+        guard conversationID == expected, !Task.isCancelled else {
+            return HermesVoiceRelay.failureOutput("the conversation has ended")
+        }
+        if let failure = outcome.failure { return HermesVoiceRelay.failureOutput(failure) }
+
+        let result = HermesVoiceRelay.toolOutput(fromReply: outcome.text)
+        if let action = result.action?.retargetedEmail(to: emailDelivery) {
+            pendingRealtimeAction = action
+        }
+        AgentTurnLog.note("relaying \(result.output.count) chars to the voice\(result.action == nil ? "" : " + an action to approve")")
+        return result.output
+    }
+
+    private struct HermesTurnOutcome {
+        var text = ""
+        var failure: String?
+    }
+
+    /// One streamed turn against the gateway. Tool starts drive the activity
+    /// label on screen and, on a live call, a spoken progress line; the
+    /// caller decides what to do with the finished reply.
+    private func streamHermes(
+        _ request: String,
+        configuration: HermesAgentClient.Configuration,
+        stillCurrent: @escaping () -> Bool
+    ) async -> HermesTurnOutcome {
         AgentTurnLog.note("hermes request → \(configuration.baseURL.host ?? "?"): \(request.prefix(80))")
         let requestedAt = Date()
-
+        narrator.reset()
+        var outcome = HermesTurnOutcome()
         var streamed = ""
         var completedText: String?
-        var failure: String?
         do {
-            for try await event in hermesClient.reply(to: request, configuration: configuration) {
-                guard conversationID == expected else { return HermesVoiceRelay.failureOutput("the conversation has ended") }
+            for try await event in hermesClient.reply(to: request, configuration: configuration, place: place.spokenDescription) {
+                guard stillCurrent() else {
+                    outcome.failure = "the conversation has ended"
+                    return outcome
+                }
                 switch event {
                 case .created:
                     AgentTurnLog.note(String(format: "hermes stream opened after %.1fs", Date().timeIntervalSince(requestedAt)))
                 case .toolStarted(let name, _):
                     AgentTurnLog.note("hermes tool: \(name)")
                     activity = Self.activityLabel(forTool: name)
+                    if usesRealtime, conversationActive, let line = narrator.narration(forTool: name, at: Date()) {
+                        AgentTurnLog.note("narrating: \(line)")
+                        realtimeClient.narrate(line)
+                    }
                 case .toolFinished:
                     activity = nil
                 case .textDelta(let delta):
@@ -802,28 +847,126 @@ final class VoiceAgentController {
                     completedText = full
                 case .failed(let message):
                     AgentTurnLog.note("hermes failed: \(message)")
-                    failure = message
+                    outcome.failure = message
                 }
             }
         } catch is CancellationError {
             AgentTurnLog.note("hermes request cancelled")
-            return HermesVoiceRelay.failureOutput("the conversation has ended")
+            outcome.failure = "the conversation has ended"
         } catch {
             AgentTurnLog.note("hermes transport error: \(error.localizedDescription)")
-            failure = error.localizedDescription
+            outcome.failure = error.localizedDescription
         }
         activity = nil
-        guard conversationID == expected, !Task.isCancelled else {
-            return HermesVoiceRelay.failureOutput("the conversation has ended")
-        }
-        if let failure { return HermesVoiceRelay.failureOutput(failure) }
+        outcome.text = completedText ?? streamed
+        return outcome
+    }
 
-        let result = HermesVoiceRelay.toolOutput(fromReply: completedText ?? streamed)
-        if let action = result.action?.retargetedEmail(to: emailDelivery) {
+    // MARK: - Typed messages and dictations
+
+    /// Whether a typed message can go out right now: on a live call it joins
+    /// the relay; otherwise Hermes must be idle and nothing awaiting approval.
+    /// The fallback conversation (on-device voice) owns the session while it
+    /// runs, so typing waits for it to end.
+    var canAcceptTypedMessage: Bool {
+        guard !isTypingTurn else { return false }
+        if usesRealtime, conversationActive { return true }
+        return !conversationActive && !isBusy && pendingAction == nil
+    }
+
+    /// A typed message. On a live call it joins the same relay as speech and
+    /// the reply is spoken; otherwise it is a text turn shown on screen.
+    /// `shown` is what the thread displays when the request itself carries
+    /// framing meant for Hermes rather than the reader. Returns whether the
+    /// message reached Hermes.
+    @discardableResult
+    func sendTypedMessage(_ text: String, settings: SharedState, milestone: String? = nil, shown: String? = nil) async -> Bool {
+        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty, canAcceptTypedMessage else { return false }
+        let displayed = shown?.trimmingCharacters(in: .whitespacesAndNewlines) ?? cleaned
+        if usesRealtime, conversationActive {
+            if let milestone { messages.append(VoiceAgentMessage(role: .milestone, text: milestone)) }
+            messages.append(VoiceAgentMessage(role: .person, text: displayed))
+            persistTurn(displayed, role: .person)
+            AgentTurnLog.note("typed message joins the live call")
+            let result = await withCheckedContinuation { continuation in
+                relayQueue.append(RelayWaiter(request: cleaned, continuation: continuation))
+                startRelayWorkerIfNeeded()
+            }
+            if !result.delivered {
+                messages.append(VoiceAgentMessage(role: .hermes, text: result.output))
+                return false
+            }
+            if result.speak, usesRealtime, conversationActive {
+                realtimeClient.say("The user typed a message and Hermes replied. Read the reply aloud as your own words: \(result.output)")
+            }
+            return true
+        }
+        if let milestone { messages.append(VoiceAgentMessage(role: .milestone, text: milestone)) }
+        messages.append(VoiceAgentMessage(role: .person, text: displayed))
+        return await textTurn(cleaned, shown: displayed, settings: settings)
+    }
+
+    /// A dictation handed over from the dictation screen. Framed for Hermes
+    /// as exactly that, and marked in the thread so it is clear where it
+    /// came from and where it went.
+    @discardableResult
+    func sendDictation(_ text: String, settings: SharedState) async -> Bool {
+        await sendTypedMessage(
+            HermesDictationHandoff.request(for: text),
+            settings: settings,
+            milestone: HermesDictationHandoff.milestone,
+            shown: text
+        )
+    }
+
+    private func textTurn(_ request: String, shown: String, settings: SharedState) async -> Bool {
+        place.refresh()
+        if textConfiguration == nil {
+            let id = UUID()
+            do {
+                textConfiguration = try HermesAgentClient.configuration(
+                    serverURL: settings.hermesServerURL,
+                    conversationID: id,
+                    model: settings.hermesVoiceModel
+                )
+            } catch {
+                messages.append(VoiceAgentMessage(role: .hermes, text: error.localizedDescription))
+                return false
+            }
+            textConversationID = id
+            try? conversationStore.begin(id: id, mode: .hermes)
+        }
+        guard let configuration = textConfiguration, let id = textConversationID else { return false }
+        try? conversationStore.append(shown, role: .person, to: id)
+        refreshHistory()
+
+        isTypingTurn = true
+        phase = .thinking
+        activity = nil
+        let outcome = await streamHermes(request, configuration: configuration) { [weak self] in
+            self?.textConversationID == id
+        }
+        isTypingTurn = false
+        activity = nil
+        phase = .ready
+
+        if let failure = outcome.failure {
+            messages.append(VoiceAgentMessage(role: .hermes, text: "Hermes couldn't answer: \(failure)"))
+            return false
+        }
+        let parsed = HermesActionBlock.extract(from: outcome.text)
+        let plain = SpokenText.plain(parsed.spoken).trimmingCharacters(in: .whitespacesAndNewlines)
+        let reply = plain.isEmpty
+            ? (parsed.action == nil ? "Hermes didn't say anything." : "Prepared something for you to approve.")
+            : plain
+        messages.append(VoiceAgentMessage(role: .hermes, text: reply))
+        try? conversationStore.append(reply, role: .hermes, to: id)
+        refreshHistory()
+        if let action = parsed.action?.retargetedEmail(to: emailDelivery) {
             pendingRealtimeAction = action
         }
-        AgentTurnLog.note("relaying \(result.output.count) chars to the voice\(result.action == nil ? "" : " + an action to approve")")
-        return result.output
+        return true
     }
 
     /// Carries out the action on screen after the user said "confirm", and

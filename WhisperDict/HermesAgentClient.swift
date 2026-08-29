@@ -81,15 +81,20 @@ struct HermesAgentClient {
     /// Dated so "this weekend" and "next weekend" resolve before a tool call:
     /// without it a Friday request for next weekend's flights was searched
     /// for the same day.
-    static func instructions(now: Date) -> String {
+    static func instructions(now: Date, place: String? = nil) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "EEEE, MMMM d, yyyy"
         let today = formatter.string(from: now)
         let zone = TimeZone.current.identifier
+        let whereabouts = place.map {
+            "The user is in \($0) right now: use that for anything local — \"here\", nearby places, the weather — " +
+            "and as the default departure city and airport for travel. "
+        } ?? ""
         return """
         Today is \(today) in the \(zone) time zone. "This weekend" means the coming Saturday and Sunday; \
         "next weekend" means the one after that. Work out exact dates before calling any tool. \
+        \(whereabouts)\
         You are Hermes, and you are talking to the user through the WhisperDict app on their iPhone. \
         They speak; your reply is read aloud by a voice model. Answer in plain spoken sentences: \
         no markdown, no lists, no headings, no URLs, no code. Lead with the answer and keep it to one \
@@ -147,11 +152,11 @@ struct HermesAgentClient {
     /// stream ends after `.completed` or `.failed`; transport failures throw.
     /// Turns in one conversation must not overlap: the gateway session is
     /// shared, and the controller serialises them.
-    func reply(to input: String, configuration: Configuration) -> AsyncThrowingStream<HermesStreamEvent, Error> {
+    func reply(to input: String, configuration: Configuration, place: String? = nil) -> AsyncThrowingStream<HermesStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    try await stream(input: input, configuration: configuration) { event in
+                    try await stream(input: input, configuration: configuration, place: place) { event in
                         continuation.yield(event)
                     }
                     continuation.finish()
@@ -166,6 +171,7 @@ struct HermesAgentClient {
     private func stream(
         input: String,
         configuration: Configuration,
+        place: String?,
         onEvent: (HermesStreamEvent) -> Void
     ) async throws {
         var request = URLRequest(url: configuration.baseURL.appendingPathComponent("v1/chat/completions"))
@@ -180,7 +186,7 @@ struct HermesAgentClient {
         request.setValue(configuration.conversation, forHTTPHeaderField: "X-Hermes-Session-Id")
         var body: [String: Any] = [
             "messages": [
-                ["role": "system", "content": Self.instructions],
+                ["role": "system", "content": Self.instructions(now: Date(), place: place)],
                 ["role": "user", "content": input],
             ],
             "stream": true,

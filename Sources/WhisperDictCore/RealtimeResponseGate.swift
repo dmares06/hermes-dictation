@@ -35,6 +35,15 @@ public struct RealtimeResponseGate: Equatable {
         return true
     }
 
+    /// For lines that are only worth saying while the voice is quiet — a
+    /// progress note during a long tool call. Sends when free; otherwise the
+    /// line is dropped rather than queued, since it would be stale by then.
+    public mutating func requestResponseIfIdle() -> Bool {
+        guard !responseActive else { return false }
+        responseActive = true
+        return true
+    }
+
     public mutating func noteResponseCreated() {
         responseActive = true
     }

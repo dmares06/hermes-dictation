@@ -4,11 +4,15 @@ public struct SavedTranscript: Codable, Equatable, Identifiable, Sendable {
     public let id: UUID
     public let text: String
     public let createdAt: Date
+    /// Set once the dictation was handed to Hermes, so the list can say so.
+    /// Optional so entries saved before the field existed still decode.
+    public var sentToHermesAt: Date?
 
-    public init(id: UUID = UUID(), text: String, createdAt: Date) {
+    public init(id: UUID = UUID(), text: String, createdAt: Date, sentToHermesAt: Date? = nil) {
         self.id = id
         self.text = text
         self.createdAt = createdAt
+        self.sentToHermesAt = sentToHermesAt
     }
 }
 
@@ -63,6 +67,22 @@ public final class TranscriptStore: @unchecked Sendable {
             defaults.set(try encoder.encode(newest), forKey: Keys.latest)
         } else {
             defaults.removeObject(forKey: Keys.latest)
+        }
+    }
+
+    /// Records that one dictation was sent to Hermes. `latest` is a copy of
+    /// the newest entry, so it is updated too when it is the one marked.
+    public func markSentToHermes(id: UUID, at date: Date = Date()) throws {
+        let updated = history.map { item -> SavedTranscript in
+            guard item.id == id else { return item }
+            var marked = item
+            marked.sentToHermesAt = date
+            return marked
+        }
+        defaults.set(try encoder.encode(updated), forKey: Keys.history)
+        if var newest = latest, newest.id == id {
+            newest.sentToHermesAt = date
+            defaults.set(try encoder.encode(newest), forKey: Keys.latest)
         }
     }
 

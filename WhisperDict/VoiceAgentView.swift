@@ -14,6 +14,7 @@ struct VoiceAgentView: View {
             VStack(spacing: 0) {
                 transcript
                 Divider()
+                MessageComposer(controller: controller, settings: settings)
                 AgentRecordingCard(
                     controller: controller,
                     modelReady: downloadService.isPrepared,
@@ -735,6 +736,52 @@ private struct PendingActionCard: View {
         case .open(.youtube): "Open YouTube"
         case .open(.spotify): "Open Spotify"
         case .runShortcut: "Run Shortcut"
+        }
+    }
+}
+
+/// Type instead of talk — a meeting, a noisy room, a card number nobody
+/// should hear. Same Hermes, same session as the voice.
+private struct MessageComposer: View {
+    let controller: VoiceAgentController
+    let settings: SharedState
+    @State private var draft = ""
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            TextField("Message Hermes", text: $draft)
+                .textFieldStyle(.roundedBorder)
+                .submitLabel(.send)
+                .focused($isFocused)
+                .onSubmit(send)
+            Button(action: send) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(canSend ? Color.mint : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSend)
+            .accessibilityLabel("Send to Hermes")
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+    }
+
+    private var canSend: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && controller.canAcceptTypedMessage
+    }
+
+    /// The draft is cleared only once the controller has taken it, so a
+    /// message can never vanish from the field without being sent.
+    private func send() {
+        guard canSend else { return }
+        let text = draft
+        draft = ""
+        Task {
+            if await !controller.sendTypedMessage(text, settings: settings), draft.isEmpty {
+                draft = text
+            }
         }
     }
 }

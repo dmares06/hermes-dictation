@@ -29,6 +29,7 @@ struct ContentView: View {
     @State private var reminderPrefill: String?
     @State private var copiedText = ""
     @State private var selectedTab: RootTab = .dictation
+    @State private var hermesBusy = false
     @State private var messagePayload: MessageComposePayload?
     @AppStorage(
         BackgroundDictationState.Keys.foregroundToggleRequest,
@@ -222,6 +223,19 @@ struct ContentView: View {
                             transcripts: dictation.history,
                             copyAction: copy,
                             deleteAction: { dictation.deleteTranscript(id: $0) },
+                            hermesAction: { item in
+                                guard agent.canAcceptTypedMessage else {
+                                    hermesBusy = true
+                                    return
+                                }
+                                selectedTab = .agent
+                                Task {
+                                    // Marked only once Hermes actually has it.
+                                    if await agent.sendDictation(item.text, settings: settings) {
+                                        dictation.markSentToHermes(id: item.id)
+                                    }
+                                }
+                            },
                             clearAction: dictation.clearHistory
                         )
                     }
@@ -244,6 +258,11 @@ struct ContentView: View {
                 Button("Not now", role: .cancel) {}
             } message: {
                 Text("Turn on Microphone access for WhisperDict, then return here to record.")
+            }
+            .alert("Hermes is busy", isPresented: $hermesBusy) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Finish or end the current Hermes conversation, then send the dictation again.")
             }
         }
     }
@@ -541,6 +560,8 @@ private struct HistorySection: View {
     let transcripts: [SavedTranscript]
     let copyAction: (String) -> Void
     let deleteAction: (UUID) -> Void
+    /// Hands the dictation to Hermes on the Agent tab.
+    let hermesAction: (SavedTranscript) -> Void
     let clearAction: () -> Void
 
     var body: some View {
@@ -555,7 +576,14 @@ private struct HistorySection: View {
                     Button { copyAction(item.text) } label: {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(item.text).lineLimit(3).foregroundStyle(.primary)
-                            Text(item.createdAt, style: .relative).font(.caption).foregroundStyle(.secondary)
+                            HStack(spacing: 8) {
+                                Text(item.createdAt, style: .relative).font(.caption).foregroundStyle(.secondary)
+                                if item.sentToHermesAt != nil {
+                                    Label(HermesDictationHandoff.badge, systemImage: "checkmark.circle.fill")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(.mint)
+                                }
+                            }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -563,8 +591,20 @@ private struct HistorySection: View {
                     .accessibilityHint("Copies this transcript")
                     .contextMenu {
                         Button("Copy", systemImage: "doc.on.doc") { copyAction(item.text) }
+                        Button("Send to Hermes", systemImage: "paperplane") { hermesAction(item) }
                         Button("Delete", systemImage: "trash", role: .destructive) { deleteAction(item.id) }
                     }
+
+                    Button {
+                        hermesAction(item)
+                    } label: {
+                        Image(systemName: item.sentToHermesAt == nil ? "paperplane" : "paperplane.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(.mint)
+                            .frame(width: 32, height: 32)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(item.sentToHermesAt == nil ? "Send this dictation to Hermes" : "Send to Hermes again")
 
                     Button(role: .destructive) {
                         withAnimation { deleteAction(item.id) }

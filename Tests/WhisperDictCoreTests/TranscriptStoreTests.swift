@@ -74,3 +74,41 @@ final class TranscriptStoreTests: XCTestCase {
         XCTAssertTrue(store.history.isEmpty)
     }
 }
+
+extension TranscriptStoreTests {
+    func testMarkingATranscriptSentToHermesSurvivesReload() throws {
+        let defaults = UserDefaults(suiteName: "TranscriptStoreTests.sentToHermes")!
+        defaults.removePersistentDomain(forName: "TranscriptStoreTests.sentToHermes")
+        let store = TranscriptStore(defaults: defaults)
+        try store.save("Remind me to call the vet", at: Date(timeIntervalSince1970: 100))
+        try store.save("Second one", at: Date(timeIntervalSince1970: 200))
+        let target = try XCTUnwrap(store.history.last)
+        XCTAssertNil(target.sentToHermesAt)
+
+        let sentAt = Date(timeIntervalSince1970: 300)
+        try store.markSentToHermes(id: target.id, at: sentAt)
+
+        let reloaded = TranscriptStore(defaults: defaults)
+        XCTAssertEqual(reloaded.history.last?.sentToHermesAt, sentAt)
+        XCTAssertNil(reloaded.history.first?.sentToHermesAt, "only the one that was sent is marked")
+        XCTAssertEqual(reloaded.latest?.sentToHermesAt, nil)
+    }
+
+    func testMarkingTheLatestTranscriptUpdatesWhatTheKeyboardInserts() throws {
+        let defaults = UserDefaults(suiteName: "TranscriptStoreTests.sentToHermesLatest")!
+        defaults.removePersistentDomain(forName: "TranscriptStoreTests.sentToHermesLatest")
+        let store = TranscriptStore(defaults: defaults)
+        try store.save("Newest", at: Date(timeIntervalSince1970: 100))
+        let newest = try XCTUnwrap(store.latest)
+        try store.markSentToHermes(id: newest.id, at: Date(timeIntervalSince1970: 150))
+        XCTAssertEqual(store.latest?.sentToHermesAt, Date(timeIntervalSince1970: 150))
+        XCTAssertEqual(store.latest?.text, "Newest")
+    }
+
+    func testOldEntriesWithoutTheFieldStillDecode() throws {
+        let json = #"[{"id":"6BA7B810-9DAD-11D1-80B4-00C04FD430C8","text":"old","createdAt":0}]"#
+        let decoded = try JSONDecoder().decode([SavedTranscript].self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.first?.text, "old")
+        XCTAssertNil(decoded.first?.sentToHermesAt)
+    }
+}

@@ -10,9 +10,19 @@ struct RealtimeFunctionResult {
     /// conversation stays well-formed, but only the newest call is spoken.
     let speak: Bool
 
+    /// False only when the request never reached Hermes at all.
+    var delivered = true
+
     static let superseded = RealtimeFunctionResult(
         output: "Superseded: the user kept talking, and this was answered together with their next request.",
         speak: false
+    )
+
+    /// The call ended before the queue got to this request.
+    static let abandoned = RealtimeFunctionResult(
+        output: "Not sent: the conversation ended before this could reach Hermes.",
+        speak: false,
+        delivered: false
     )
 }
 
@@ -46,6 +56,9 @@ final class RealtimeAgentClient: NSObject {
     private var isStopping = false
     /// One response at a time: see `RealtimeResponseGate`.
     private var responseGate = RealtimeResponseGate()
+    /// The out-of-band progress line in flight, so its events are kept out
+    /// of the transcript and off the phase, unlike a real turn's.
+    private var narrationResponseID: String?
     // Fulfilled when ICE gathering reaches .complete, so the offer we send
     // carries its candidates. OpenAI does not accept trickle ICE and rejects
     // a candidate-less offer as an unparseable SDP.
@@ -174,6 +187,7 @@ final class RealtimeAgentClient: NSObject {
         peerConnection = nil
         assistantTranscript = ""
         responseGate.reset()
+        narrationResponseID = nil
         iceGatheringContinuation?.resume()
         iceGatheringContinuation = nil
         iceGatheringComplete = false
@@ -318,6 +332,41 @@ final class RealtimeAgentClient: NSObject {
         dataChannel.sendData(RTCDataBuffer(data: data, isBinary: false))
     }
 
+    /// A short progress line while Hermes works — "Checking flights now."
+    /// Spoken out of band, so it never enters the conversation, with only
+    /// these instructions as context, so the model cannot wander. Dropped
+    /// rather than queued when the voice is busy: by the time the line
+    /// frees up the note is stale.
+    func narrate(_ line: String) {
+        guard responseGate.requestResponseIfIdle() else {
+            AgentTurnLog.note("progress line dropped, voice busy: \(line)")
+            return
+        }
+        send([
+            "type": "response.create",
+            "response": [
+                "conversation": "none",
+                "output_modalities": ["audio"],
+                "input": [],
+                "instructions": "Say exactly this and nothing more: \(line)",
+                "metadata": ["topic": Self.narrationTopic],
+            ],
+        ])
+    }
+
+    private static let narrationTopic = "progress"
+
+    private func isNarration(_ object: [String: Any]) -> Bool {
+        if let response = object["response"] as? [String: Any] {
+            if let metadata = response["metadata"] as? [String: Any], metadata["topic"] as? String == Self.narrationTopic {
+                return true
+            }
+            if let id = response["id"] as? String, id == narrationResponseID { return true }
+        }
+        if let id = object["response_id"] as? String, id == narrationResponseID { return true }
+        return false
+    }
+
     /// Tells the voice something that happened on the phone — a confirmation
     /// card tapped, an action carried out — and has it respond. Sent as a
     /// system message rather than through `session.update`, which would
@@ -346,21 +395,31 @@ final class RealtimeAgentClient: NSObject {
             onStateChange?(.responding)
         case "response.created":
             responseGate.noteResponseCreated()
-            onStateChange?(.responding)
+            if isNarration(object) {
+                narrationResponseID = (object["response"] as? [String: Any])?["id"] as? String
+            } else {
+                onStateChange?(.responding)
+            }
         case "conversation.item.input_audio_transcription.completed":
             if let transcript = object["transcript"] as? String {
                 onUserTranscript?(transcript)
             }
         case "response.output_audio_transcript.delta":
+            guard !isNarration(object) else { return }
             assistantTranscript += object["delta"] as? String ?? ""
         case "response.output_audio_transcript.done":
+            guard !isNarration(object) else { return }
             let transcript = (object["transcript"] as? String ?? assistantTranscript)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             assistantTranscript = ""
             if !transcript.isEmpty { onAssistantTranscript?(transcript) }
         case "response.done":
-            handleCompletedResponse(object)
-            onStateChange?(.listening)
+            if isNarration(object) {
+                narrationResponseID = nil
+            } else {
+                handleCompletedResponse(object)
+                onStateChange?(.listening)
+            }
             if responseGate.noteResponseDone() {
                 AgentTurnLog.note("sending the deferred response now")
                 requestResponse()

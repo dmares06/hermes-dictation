@@ -137,6 +137,11 @@ final class DictationSessionController {
         if !history.contains(where: { $0.text == transcript }) { transcript = store.latest?.text ?? "" }
     }
 
+    func markSentToHermes(id: UUID) {
+        try? store.markSentToHermes(id: id)
+        history = store.history
+    }
+
     func dismissError() {
         if case .failed = phase { phase = .ready }
     }

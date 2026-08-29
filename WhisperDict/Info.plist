@@ -29,6 +29,8 @@
 	<string>6</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>WhisperDict uses the microphone to convert your speech to text on this device.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Hermes uses your city so "the weather here" and flights from home work without saying where you are.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>WhisperDict uses on-device speech recognition so the keyboard can dictate directly into other apps.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
