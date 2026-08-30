@@ -37,7 +37,13 @@ final class VoiceAgentController {
         case failed(String)
     }
 
-    private(set) var phase: Phase = .ready
+    private(set) var phase: Phase = .ready {
+        didSet {
+            // The voice speaks no filler while Hermes works, so on a live
+            // call the thinking phase ticks softly instead of going dead.
+            earcon.setActive(phase == .thinking && usesRealtime && conversationActive)
+        }
+    }
     private(set) var messages = [
         VoiceAgentMessage(
             role: .hermes,
@@ -83,6 +89,7 @@ final class VoiceAgentController {
     private let recorder: DictationAudioRecorder
     private let transcriber: DictationTranscriber
     private let speaker = VoiceAgentSpeaker()
+    private let earcon = ThinkingEarcon()
     private let realtimeClient = RealtimeAgentClient()
     private let hermesClient = HermesAgentClient()
     private let conversationStore: HermesConversationStore
@@ -98,7 +105,6 @@ final class VoiceAgentController {
     /// talking, so they are one thought — and only the newest is spoken.
     private var relayQueue: [RelayWaiter] = []
     private var relayWorker: Task<Void, Never>?
-    private var narrator = HermesProgressNarrator()
     /// The phone's city, folded into every Hermes prompt.
     let place = PlaceContext()
     /// Typed messages outside a call share one Hermes session per launch,
@@ -809,8 +815,8 @@ final class VoiceAgentController {
     }
 
     /// One streamed turn against the gateway. Tool starts drive the activity
-    /// label on screen and, on a live call, a spoken progress line; the
-    /// caller decides what to do with the finished reply.
+    /// label on screen — never the voice: progress belongs on the display,
+    /// and the reply is the only thing worth hearing.
     private func streamHermes(
         _ request: String,
         configuration: HermesAgentClient.Configuration,
@@ -818,7 +824,6 @@ final class VoiceAgentController {
     ) async -> HermesTurnOutcome {
         AgentTurnLog.note("hermes request → \(configuration.baseURL.host ?? "?"): \(request.prefix(80))")
         let requestedAt = Date()
-        narrator.reset()
         var outcome = HermesTurnOutcome()
         var streamed = ""
         var completedText: String?
@@ -834,10 +839,6 @@ final class VoiceAgentController {
                 case .toolStarted(let name, _):
                     AgentTurnLog.note("hermes tool: \(name)")
                     activity = Self.activityLabel(forTool: name)
-                    if usesRealtime, conversationActive, let line = narrator.narration(forTool: name, at: Date()) {
-                        AgentTurnLog.note("narrating: \(line)")
-                        realtimeClient.narrate(line)
-                    }
                 case .toolFinished:
                     activity = nil
                 case .textDelta(let delta):
