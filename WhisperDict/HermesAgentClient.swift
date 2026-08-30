@@ -156,11 +156,19 @@ struct HermesAgentClient {
     /// stream ends after `.completed` or `.failed`; transport failures throw.
     /// Turns in one conversation must not overlap: the gateway session is
     /// shared, and the controller serialises them.
-    func reply(to input: String, configuration: Configuration, place: String? = nil) -> AsyncThrowingStream<HermesStreamEvent, Error> {
+    /// `imageDataURLs` are pre-encoded `data:image/...` URLs sent alongside
+    /// the text as OpenAI-style image content parts, so Hermes can look at
+    /// photos the user attaches.
+    func reply(
+        to input: String,
+        configuration: Configuration,
+        place: String? = nil,
+        imageDataURLs: [String] = []
+    ) -> AsyncThrowingStream<HermesStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    try await stream(input: input, configuration: configuration, place: place) { event in
+                    try await stream(input: input, configuration: configuration, place: place, imageDataURLs: imageDataURLs) { event in
                         continuation.yield(event)
                     }
                     continuation.finish()
@@ -176,6 +184,7 @@ struct HermesAgentClient {
         input: String,
         configuration: Configuration,
         place: String?,
+        imageDataURLs: [String],
         onEvent: (HermesStreamEvent) -> Void
     ) async throws {
         var request = URLRequest(url: configuration.baseURL.appendingPathComponent("v1/chat/completions"))
@@ -188,10 +197,22 @@ struct HermesAgentClient {
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.setValue(Self.sessionKey, forHTTPHeaderField: "X-Hermes-Session-Key")
         request.setValue(configuration.conversation, forHTTPHeaderField: "X-Hermes-Session-Id")
+        // A plain string when there is nothing to look at — the widest
+        // compatibility — and content parts only when images ride along.
+        let userContent: Any
+        if imageDataURLs.isEmpty {
+            userContent = input
+        } else {
+            var parts: [[String: Any]] = imageDataURLs.map {
+                ["type": "image_url", "image_url": ["url": $0]]
+            }
+            parts.append(["type": "text", "text": input])
+            userContent = parts
+        }
         var body: [String: Any] = [
             "messages": [
                 ["role": "system", "content": Self.instructions(now: Date(), place: place)],
-                ["role": "user", "content": input],
+                ["role": "user", "content": userContent],
             ],
             "stream": true,
         ]
