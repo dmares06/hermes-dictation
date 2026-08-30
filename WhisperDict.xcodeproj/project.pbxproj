@@ -61,6 +61,7 @@ E100000000000000000000B1 /* PlaceContext.swift in Sources */ = {isa = PBXBuildFi
 		C10000000000000000000001 /* ListeningWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000011 /* ListeningWindow.swift */; };
 		B80000000000000000000001 /* MessageRecipients.swift in Sources */ = {isa = PBXBuildFile; fileRef = B80000000000000000000011 /* MessageRecipients.swift */; };
 		B60000000000000000000001 /* RealtimeAgentClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60000000000000000000011 /* RealtimeAgentClient.swift */; };
+		B60000000000000000000003 /* ThinkingEarcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60000000000000000000013 /* ThinkingEarcon.swift */; };
 		E10000000000000000000006 /* HermesAgentClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000016 /* HermesAgentClient.swift */; };
 		BD0000000000000000000001 /* DictationLatencyLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD0000000000000000000011 /* DictationLatencyLog.swift */; };
 		E10000000000000000000008 /* AgentTurnLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000018 /* AgentTurnLog.swift */; };
@@ -161,6 +162,7 @@ E100000000000000000000B2 /* PlaceContext.swift */ = {isa = PBXFileReference; las
 		C10000000000000000000011 /* ListeningWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningWindow.swift; sourceTree = "<group>"; };
 		B80000000000000000000011 /* MessageRecipients.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageRecipients.swift; sourceTree = "<group>"; };
 		B60000000000000000000011 /* RealtimeAgentClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeAgentClient.swift; sourceTree = "<group>"; };
+		B60000000000000000000013 /* ThinkingEarcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingEarcon.swift; sourceTree = "<group>"; };
 		E10000000000000000000016 /* HermesAgentClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesAgentClient.swift; sourceTree = "<group>"; };
 		BD0000000000000000000011 /* DictationLatencyLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationLatencyLog.swift; sourceTree = "<group>"; };
 		E10000000000000000000018 /* AgentTurnLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTurnLog.swift; sourceTree = "<group>"; };
@@ -220,6 +222,7 @@ E100000000000000000000A4 /* RealtimeResponseGate.swift */ = {isa = PBXFileRefere
 				E100000000000000000000B2 /* PlaceContext.swift */,
 				A1000000000000000000006D /* VoiceAgentView.swift */,
 				B60000000000000000000011 /* RealtimeAgentClient.swift */,
+				B60000000000000000000013 /* ThinkingEarcon.swift */,
 				E10000000000000000000016 /* HermesAgentClient.swift */,
 				BD0000000000000000000011 /* DictationLatencyLog.swift */,
 				E10000000000000000000018 /* AgentTurnLog.swift */,
@@ -481,6 +484,7 @@ E100000000000000000000A4 /* RealtimeResponseGate.swift */ = {isa = PBXFileRefere
 				E100000000000000000000B1 /* PlaceContext.swift in Sources */,
 				A1000000000000000000006A /* VoiceAgentView.swift in Sources */,
 				B60000000000000000000001 /* RealtimeAgentClient.swift in Sources */,
+				B60000000000000000000003 /* ThinkingEarcon.swift in Sources */,
 				E10000000000000000000006 /* HermesAgentClient.swift in Sources */,
 				BD0000000000000000000001 /* DictationLatencyLog.swift in Sources */,
 				E10000000000000000000008 /* AgentTurnLog.swift in Sources */,

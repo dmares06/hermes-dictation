@@ -37,7 +37,13 @@ final class VoiceAgentController {
         case failed(String)
     }
 
-    private(set) var phase: Phase = .ready
+    private(set) var phase: Phase = .ready {
+        didSet {
+            // The voice speaks no filler while Hermes works, so on a live
+            // call the thinking phase ticks softly instead of going dead.
+            earcon.setActive(phase == .thinking && usesRealtime && conversationActive)
+        }
+    }
     private(set) var messages = [
         VoiceAgentMessage(
             role: .hermes,
@@ -83,6 +89,7 @@ final class VoiceAgentController {
     private let recorder: DictationAudioRecorder
     private let transcriber: DictationTranscriber
     private let speaker = VoiceAgentSpeaker()
+    private let earcon = ThinkingEarcon()
     private let realtimeClient = RealtimeAgentClient()
     private let hermesClient = HermesAgentClient()
     private let conversationStore: HermesConversationStore
