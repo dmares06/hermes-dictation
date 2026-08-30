@@ -493,9 +493,10 @@ final class VoiceAgentController {
 
         let finished = speech.finish(completedText: completedText)
         let shown = finished.spoken.isEmpty
-            ? (finished.action == nil ? "Hermes didn't say anything." : "Prepared something for you to approve.")
+            ? Self.emptyReplyText(action: finished.action, hasImages: !finished.images.isEmpty)
             : finished.spoken
-        upsertHermesBubble(id: bubbleID, text: shown)
+        let bubble = upsertHermesBubble(id: bubbleID, text: shown)
+        attachReplyImages(finished.images, to: bubble)
         persistTurn(shown, role: .hermes)
         if let remainder = finished.remainingSpeech { speaker.enqueue(remainder) }
         AgentTurnLog.note("speaking: \(spokenSentences) streamed sentence(s) + \(finished.remainingSpeech?.count ?? 0) chars remainder")
@@ -535,6 +536,28 @@ final class VoiceAgentController {
     }
 
     @discardableResult
+    private static func emptyReplyText(action: VoiceAgentAction?, hasImages: Bool) -> String {
+        if action != nil { return "Prepared something for you to approve." }
+        return hasImages ? "Here you go." : "Hermes didn't say anything."
+    }
+
+    /// Pictures in a reply are fetched once the words are on screen, then
+    /// dropped into that bubble — or, with no bubble to join (a live call,
+    /// where the voice model does the talking), into one of their own.
+    private func attachReplyImages(_ references: [HermesReplyImage], to messageID: UUID?) {
+        guard !references.isEmpty else { return }
+        AgentTurnLog.note("reply carries \(references.count) picture(s)")
+        Task { @MainActor [weak self] in
+            let images = await HermesReplyImageLoader.load(references)
+            guard let self, !images.isEmpty else { return }
+            if let messageID, let index = self.messages.firstIndex(where: { $0.id == messageID }) {
+                self.messages[index].images = images
+            } else {
+                self.messages.append(VoiceAgentMessage(role: .hermes, text: "", images: images))
+            }
+        }
+    }
+
     private func upsertHermesBubble(id: UUID?, text: String) -> UUID {
         if let id, let index = messages.firstIndex(where: { $0.id == id }) {
             messages[index].text = text
@@ -829,6 +852,7 @@ final class VoiceAgentController {
         if let failure = outcome.failure { return HermesVoiceRelay.failureOutput(failure) }
 
         let result = HermesVoiceRelay.toolOutput(fromReply: outcome.text)
+        attachReplyImages(HermesReplyImages.extract(from: outcome.text).images, to: nil)
         if let action = result.action?.retargetedEmail(to: emailDelivery) {
             pendingRealtimeAction = action
         }
@@ -1024,11 +1048,14 @@ final class VoiceAgentController {
             return false
         }
         let parsed = HermesActionBlock.extract(from: outcome.text)
+        let pictures = HermesReplyImages.extract(from: parsed.spoken).images
         let plain = SpokenText.plain(parsed.spoken).trimmingCharacters(in: .whitespacesAndNewlines)
         let reply = plain.isEmpty
-            ? (parsed.action == nil ? "Hermes didn't say anything." : "Prepared something for you to approve.")
+            ? Self.emptyReplyText(action: parsed.action, hasImages: !pictures.isEmpty)
             : plain
-        messages.append(VoiceAgentMessage(role: .hermes, text: reply))
+        let message = VoiceAgentMessage(role: .hermes, text: reply)
+        messages.append(message)
+        attachReplyImages(pictures, to: message.id)
         try? conversationStore.append(reply, role: .hermes, to: id)
         refreshHistory()
         if let action = parsed.action?.retargetedEmail(to: emailDelivery) {

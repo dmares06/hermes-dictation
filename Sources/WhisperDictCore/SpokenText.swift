@@ -74,6 +74,10 @@ public struct SpokenSentenceSplitter: Sendable {
 public enum SpokenText {
     public static func plain(_ markdown: String) -> String {
         var text = markdown
+        // Pictures are shown, never read: drop them before the link rule
+        // would otherwise turn "![potato](url)" into a spoken "!potato".
+        text = replace(text, #"!\[[^\]]*\]\(\s*<?[^)\s]+>?\s*\)"#, with: "")
+        text = replace(text, #"data:image/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=]+"#, with: "")
         text = replace(text, #"```[a-zA-Z]*\n?"#, with: "")
         text = replace(text, #"`([^`]+)`"#, with: "$1")
         text = replace(text, #"\[([^\]]+)\]\([^)]+\)"#, with: "$1")

@@ -99,7 +99,9 @@ enum AgentAttachmentLoader {
         return !text.contains { $0.asciiValue.map { $0 < 9 } ?? false }
     }
 
-    private static func downscaled(_ image: UIImage) -> UIImage {
+    /// Also used for pictures Hermes sends back, so nothing oversized sits in
+    /// the thread.
+    static func downscaled(_ image: UIImage) -> UIImage {
         let largest = max(image.size.width, image.size.height)
         guard largest > maxImageDimension, largest > 0 else { return image }
         let scale = maxImageDimension / largest

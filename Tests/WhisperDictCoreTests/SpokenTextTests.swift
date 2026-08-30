@@ -1,6 +1,14 @@
 import XCTest
 @testable import WhisperDictCore
 
+final class SpokenTextImageTests: XCTestCase {
+    func testPicturesAreNeverSpoken() {
+        XCTAssertEqual(SpokenText.plain("Here it is. ![A russet potato](https://x.io/p.jpg)"), "Here it is.")
+        XCTAssertEqual(SpokenText.plain("Done ![p](data:image/png;base64,AAAA)"), "Done")
+        XCTAssertEqual(SpokenText.plain("https://v3.fal.media/files/out.jpeg"), "")
+    }
+}
+
 final class SpokenSentenceSplitterTests: XCTestCase {
     func testSentencesAreReleasedAsSoonAsTheyAreComplete() {
         var splitter = SpokenSentenceSplitter()

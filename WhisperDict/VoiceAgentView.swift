@@ -244,9 +244,11 @@ private struct TranscriptBubble: View {
                 if !images.isEmpty {
                     attachmentRow
                 }
-                Text(text)
-                    .font(.body)
-                    .textSelection(.enabled)
+                if !text.isEmpty {
+                    Text(text)
+                        .font(.body)
+                        .textSelection(.enabled)
+                }
                 if let time {
                     Text(time.formatted(date: .omitted, time: .shortened))
                         .font(.caption2)
@@ -262,17 +264,32 @@ private struct TranscriptBubble: View {
             if !isPerson { Spacer(minLength: 52) }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(isPerson ? "You" : "Hermes"): \(text)")
+        .accessibilityLabel("\(isPerson ? "You" : "Hermes"): \(text)\(images.isEmpty ? "" : ", with a picture")")
     }
 
+    /// The person's photos are thumbnails of what they sent; a picture from
+    /// Hermes is the answer, so it gets the width of the bubble.
+    @ViewBuilder
     private var attachmentRow: some View {
-        HStack(spacing: 6) {
-            ForEach(Array(images.prefix(4).enumerated()), id: \.offset) { _, image in
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 84, height: 84)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        if isPerson {
+            HStack(spacing: 6) {
+                ForEach(Array(images.prefix(4).enumerated()), id: \.offset) { _, image in
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 84, height: 84)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+            }
+        } else {
+            VStack(spacing: 6) {
+                ForEach(Array(images.prefix(4).enumerated()), id: \.offset) { _, image in
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: 280)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
             }
         }
     }

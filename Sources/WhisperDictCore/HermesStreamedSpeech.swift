@@ -14,6 +14,8 @@ public struct HermesStreamedSpeech: Sendable {
         public let action: VoiceAgentAction?
         /// What is still to be said aloud after the streamed sentences.
         public let remainingSpeech: String?
+        /// Pictures the reply carried, for the bubble; none are spoken.
+        public var images: [HermesReplyImage] = []
     }
 
     private var raw = ""
@@ -64,7 +66,8 @@ public struct HermesStreamedSpeech: Sendable {
         return Finished(
             spoken: SpokenText.plain(parsed.spoken),
             action: parsed.action,
-            remainingSpeech: remainder.isEmpty ? nil : remainder
+            remainingSpeech: remainder.isEmpty ? nil : remainder,
+            images: HermesReplyImages.extract(from: parsed.spoken).images
         )
     }
 }
