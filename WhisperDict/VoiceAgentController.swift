@@ -16,6 +16,8 @@ struct VoiceAgentMessage: Identifiable, Equatable {
     let role: Role
     var text: String
     let createdAt: Date = Date()
+    /// Thumbnails of photos the person attached, shown inside their bubble.
+    var images: [UIImage] = []
 }
 
 struct VoiceAgentSharePayload: Identifiable {
@@ -820,6 +822,7 @@ final class VoiceAgentController {
     private func streamHermes(
         _ request: String,
         configuration: HermesAgentClient.Configuration,
+        imageDataURLs: [String] = [],
         stillCurrent: @escaping () -> Bool
     ) async -> HermesTurnOutcome {
         AgentTurnLog.note("hermes request → \(configuration.baseURL.host ?? "?"): \(request.prefix(80))")
@@ -828,7 +831,12 @@ final class VoiceAgentController {
         var streamed = ""
         var completedText: String?
         do {
-            for try await event in hermesClient.reply(to: request, configuration: configuration, place: place.spokenDescription) {
+            for try await event in hermesClient.reply(
+                to: request,
+                configuration: configuration,
+                place: place.spokenDescription,
+                imageDataURLs: imageDataURLs
+            ) {
                 guard stillCurrent() else {
                     outcome.failure = "the conversation has ended"
                     return outcome
@@ -881,10 +889,17 @@ final class VoiceAgentController {
     /// framing meant for Hermes rather than the reader. Returns whether the
     /// message reached Hermes.
     @discardableResult
-    func sendTypedMessage(_ text: String, settings: SharedState, milestone: String? = nil, shown: String? = nil) async -> Bool {
-        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    func sendTypedMessage(
+        _ text: String,
+        settings: SharedState,
+        milestone: String? = nil,
+        shown: String? = nil,
+        attachments: [AgentAttachment] = []
+    ) async -> Bool {
+        var cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.isEmpty, !attachments.isEmpty { cleaned = "Take a look at what I attached." }
         guard !cleaned.isEmpty, canAcceptTypedMessage else { return false }
-        let displayed = shown?.trimmingCharacters(in: .whitespacesAndNewlines) ?? cleaned
+        var displayed = shown?.trimmingCharacters(in: .whitespacesAndNewlines) ?? cleaned
         if usesRealtime, conversationActive {
             if let milestone { messages.append(VoiceAgentMessage(role: .milestone, text: milestone)) }
             messages.append(VoiceAgentMessage(role: .person, text: displayed))
@@ -903,9 +918,31 @@ final class VoiceAgentController {
             }
             return true
         }
+        // Build what Hermes receives: document text inlined under the file's
+        // name, photos as image parts. The thread shows the thumbnails and
+        // names, not the inlined contents.
+        var request = cleaned
+        var imageDataURLs: [String] = []
+        var thumbnails: [UIImage] = []
+        for attachment in attachments {
+            switch attachment.payload {
+            case .image(let image):
+                if let dataURL = AgentAttachmentLoader.imageDataURL(for: image) {
+                    imageDataURLs.append(dataURL)
+                    thumbnails.append(image)
+                }
+            case .text(let content):
+                request += "\n\nAttached file \"\(attachment.name)\":\n\(content)"
+            }
+        }
+        let documentNames = attachments.filter { $0.previewImage == nil }.map(\.name)
+        if !documentNames.isEmpty {
+            displayed += "\n📎 " + documentNames.joined(separator: ", ")
+        }
+
         if let milestone { messages.append(VoiceAgentMessage(role: .milestone, text: milestone)) }
-        messages.append(VoiceAgentMessage(role: .person, text: displayed))
-        return await textTurn(cleaned, shown: displayed, settings: settings)
+        messages.append(VoiceAgentMessage(role: .person, text: displayed, images: thumbnails))
+        return await textTurn(request, shown: displayed, settings: settings, imageDataURLs: imageDataURLs)
     }
 
     /// A dictation handed over from the dictation screen. Framed for Hermes
@@ -921,7 +958,12 @@ final class VoiceAgentController {
         )
     }
 
-    private func textTurn(_ request: String, shown: String, settings: SharedState) async -> Bool {
+    private func textTurn(
+        _ request: String,
+        shown: String,
+        settings: SharedState,
+        imageDataURLs: [String] = []
+    ) async -> Bool {
         place.refresh()
         if textConfiguration == nil {
             let id = UUID()
@@ -945,7 +987,7 @@ final class VoiceAgentController {
         isTypingTurn = true
         phase = .thinking
         activity = nil
-        let outcome = await streamHermes(request, configuration: configuration) { [weak self] in
+        let outcome = await streamHermes(request, configuration: configuration, imageDataURLs: imageDataURLs) { [weak self] in
             self?.textConversationID == id
         }
         isTypingTurn = false

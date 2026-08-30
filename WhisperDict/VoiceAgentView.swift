@@ -1,5 +1,22 @@
+import PhotosUI
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
+
+/// One committed look for the agent screen: near-black ground, slate
+/// surfaces, a single teal accent. Light mode keeps the same structure on
+/// system greys so nothing washes out in daylight.
+enum AgentTheme {
+    static let background = dynamic(dark: UIColor(red: 0.04, green: 0.055, blue: 0.075, alpha: 1), light: .systemGroupedBackground)
+    static let surface = dynamic(dark: UIColor(red: 0.09, green: 0.115, blue: 0.145, alpha: 1), light: .secondarySystemGroupedBackground)
+    static let personBubble = dynamic(dark: UIColor(red: 0.05, green: 0.24, blue: 0.25, alpha: 1), light: UIColor(red: 0.72, green: 0.92, blue: 0.88, alpha: 1))
+    static let stroke = dynamic(dark: UIColor(white: 1, alpha: 0.07), light: UIColor(white: 0, alpha: 0.08))
+    static let accent = Color.mint
+
+    private static func dynamic(dark: UIColor, light: UIColor) -> Color {
+        Color(UIColor { $0.userInterfaceStyle == .dark ? dark : light })
+    }
+}
 
 struct VoiceAgentView: View {
     @Environment(SharedState.self) private var settings
@@ -13,7 +30,6 @@ struct VoiceAgentView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 transcript
-                Divider()
                 // Quick requests live with the composer, not in the thread:
                 // they are ways to start saying something, so they belong next
                 // to the field where you would have typed it.
@@ -30,10 +46,25 @@ struct VoiceAgentView: View {
                     endConversation: { Task { await controller.endConversation() } }
                 )
             }
-            .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("Hermes Agent")
+            .background(AgentTheme.background)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: 7) {
+                        Circle()
+                            .fill(statusDotColor)
+                            .frame(width: 8, height: 8)
+                        Text("Hermes")
+                            .font(.headline)
+                        Text("AGENT")
+                            .font(.caption2.weight(.bold))
+                            .kerning(1.8)
+                            .foregroundStyle(AgentTheme.accent)
+                            .padding(.top, 2)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Hermes Agent")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         settings.agentUsesSpeaker.toggle()
@@ -75,6 +106,17 @@ struct VoiceAgentView: View {
             .sheet(item: $controller.messagePayload) { payload in
                 MessageComposeView(body: payload.body, recipients: payload.recipients)
             }
+        }
+        .tint(AgentTheme.accent)
+    }
+
+    /// The header's one-glance state: green when ready to talk, amber while
+    /// Hermes is busy, red when something failed.
+    private var statusDotColor: Color {
+        switch controller.phase {
+        case .failed: .red
+        case .ready: .green
+        default: .orange
         }
     }
 
@@ -149,7 +191,12 @@ struct VoiceAgentView: View {
         case .milestone:
             TranscriptStamp(date: message.createdAt, note: message.text)
         case .person, .hermes:
-            TranscriptBubble(text: message.text, isPerson: message.role == .person)
+            TranscriptBubble(
+                text: message.text,
+                isPerson: message.role == .person,
+                time: message.createdAt,
+                images: message.images
+            )
         }
     }
 }
@@ -191,23 +238,47 @@ private struct TranscriptStamp: View {
 private struct TranscriptBubble: View {
     let text: String
     let isPerson: Bool
+    var time: Date? = nil
+    var images: [UIImage] = []
 
     var body: some View {
         HStack(spacing: 0) {
             if isPerson { Spacer(minLength: 52) }
-            Text(text)
-                .font(.body)
-                .textSelection(.enabled)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background(
-                    isPerson ? Color.mint.opacity(0.28) : Color(uiColor: .secondarySystemBackground),
-                    in: RoundedRectangle(cornerRadius: 19, style: .continuous)
-                )
+            VStack(alignment: .leading, spacing: 6) {
+                if !images.isEmpty {
+                    attachmentRow
+                }
+                Text(text)
+                    .font(.body)
+                    .textSelection(.enabled)
+                if let time {
+                    Text(time.formatted(date: .omitted, time: .shortened))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                isPerson ? AgentTheme.personBubble : AgentTheme.surface,
+                in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+            )
             if !isPerson { Spacer(minLength: 52) }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(isPerson ? "You" : "Hermes"): \(text)")
+    }
+
+    private var attachmentRow: some View {
+        HStack(spacing: 6) {
+            ForEach(Array(images.prefix(4).enumerated()), id: \.offset) { _, image in
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 84, height: 84)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
     }
 }
 
@@ -216,14 +287,15 @@ private struct AgentBoundaryCard: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("You stay in control", systemImage: "checkmark.shield")
                 .font(.headline)
-                .foregroundStyle(.mint)
+                .foregroundStyle(AgentTheme.accent)
             Text("Tap once to start a live conversation. Hermes listens for the end of each turn, answers aloud, and listens again. External actions still wait for your confirmation.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(.background, in: RoundedRectangle(cornerRadius: 18))
+        .background(AgentTheme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(AgentTheme.stroke))
     }
 }
 
@@ -292,7 +364,8 @@ private struct AgentRecordingCard: View {
         .padding(.top, 12)
         .padding(.bottom, 6)
         .padding(.horizontal)
-        .background(.bar)
+        .background(AgentTheme.background)
+        .overlay(alignment: .top) { AgentTheme.stroke.frame(height: 0.5) }
     }
 
     private var statusColor: Color {
@@ -362,7 +435,7 @@ private struct HermesUsageCard: View {
         }
         .frame(maxWidth: .infinity)
         .padding()
-        .background(.background, in: RoundedRectangle(cornerRadius: 18))
+        .background(AgentTheme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 
@@ -404,7 +477,7 @@ struct AgentHistoryView: View {
             case .conversations: conversationList
             }
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(AgentTheme.background)
         .navigationTitle("Hermes memory")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -584,7 +657,7 @@ private struct AgentConversationDetail: View {
                 )
 
                 ForEach(conversation.turns) { turn in
-                    TranscriptBubble(text: turn.text, isPerson: turn.role == .person)
+                    TranscriptBubble(text: turn.text, isPerson: turn.role == .person, time: turn.createdAt)
                 }
 
                 if conversation.turns.isEmpty {
@@ -599,7 +672,7 @@ private struct AgentConversationDetail: View {
             }
             .padding()
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(AgentTheme.background)
         .navigationTitle(TranscriptStamp.stamp(for: conversation.startedAt))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -745,30 +818,160 @@ private struct MessageComposer: View {
     let controller: VoiceAgentController
     let settings: SharedState
     @State private var draft = ""
+    @State private var attachments: [AgentAttachment] = []
+    @State private var attachmentProblem: String?
+    @State private var photoItems: [PhotosPickerItem] = []
+    @State private var showsPhotoPicker = false
+    @State private var showsFileImporter = false
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
-            TextField("Message Hermes", text: $draft)
-                .textFieldStyle(.roundedBorder)
-                .submitLabel(.send)
-                .focused($isFocused)
-                .onSubmit(send)
-            Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.title)
-                    .foregroundStyle(canSend ? Color.mint : Color.secondary)
+        VStack(spacing: 8) {
+            if !attachments.isEmpty {
+                stagedAttachments
             }
-            .buttonStyle(.plain)
-            .disabled(!canSend)
-            .accessibilityLabel("Send to Hermes")
+            HStack(spacing: 10) {
+                attachButton
+                TextField("Message Hermes…", text: $draft)
+                    .submitLabel(.send)
+                    .focused($isFocused)
+                    .onSubmit(send)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(AgentTheme.surface, in: Capsule())
+                    .overlay(Capsule().stroke(AgentTheme.stroke))
+                Button(action: send) {
+                    Image(systemName: "arrow.up")
+                        .font(.body.weight(.bold))
+                        .foregroundStyle(canSend ? Color.black : Color.secondary)
+                        .frame(width: 36, height: 36)
+                        .background(canSend ? AgentTheme.accent : AgentTheme.surface, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSend)
+                .accessibilityLabel("Send to Hermes")
+            }
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+        .photosPicker(isPresented: $showsPhotoPicker, selection: $photoItems, maxSelectionCount: 4, matching: .images)
+        .onChange(of: photoItems) { _, items in
+            guard !items.isEmpty else { return }
+            photoItems = []
+            Task { await stagePhotos(items) }
+        }
+        .fileImporter(
+            isPresented: $showsFileImporter,
+            allowedContentTypes: [.image, .pdf, .text, .json, .commaSeparatedText],
+            allowsMultipleSelection: true
+        ) { result in
+            stageFiles(result)
+        }
+        .alert("Couldn't attach that", isPresented: .init(
+            get: { attachmentProblem != nil },
+            set: { if !$0 { attachmentProblem = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(attachmentProblem ?? "")
+        }
+    }
+
+    /// Photos and files go to Hermes with the next message. Live calls carry
+    /// voice only, so the button rests while one is running.
+    private var attachButton: some View {
+        Menu {
+            Button("Photo Library", systemImage: "photo.on.rectangle") { showsPhotoPicker = true }
+            Button("Choose File", systemImage: "folder") { showsFileImporter = true }
+        } label: {
+            Image(systemName: "plus")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(AgentTheme.accent)
+                .frame(width: 36, height: 36)
+                .background(AgentTheme.surface, in: Circle())
+                .overlay(Circle().stroke(AgentTheme.stroke))
+        }
+        .disabled(controller.conversationActive)
+        .accessibilityLabel("Attach a photo or file")
+    }
+
+    private var stagedAttachments: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(attachments) { attachment in
+                    stagedItem(attachment)
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+    }
+
+    @ViewBuilder
+    private func stagedItem(_ attachment: AgentAttachment) -> some View {
+        ZStack(alignment: .topTrailing) {
+            if let image = attachment.previewImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else {
+                Label(attachment.name, systemImage: "doc.text")
+                    .font(.caption)
+                    .lineLimit(1)
+                    .padding(.horizontal, 10)
+                    .frame(height: 56)
+                    .frame(maxWidth: 150)
+                    .background(AgentTheme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(AgentTheme.stroke))
+            }
+            Button {
+                attachments.removeAll { $0.id == attachment.id }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.body)
+                    .foregroundStyle(.white, .black.opacity(0.6))
+            }
+            .buttonStyle(.plain)
+            .offset(x: 6, y: -6)
+            .accessibilityLabel("Remove \(attachment.name)")
+        }
+        .padding(.top, 6)
+    }
+
+    private func stagePhotos(_ items: [PhotosPickerItem]) async {
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self) else {
+                attachmentProblem = AgentAttachmentError.unreadable("That photo").localizedDescription
+                continue
+            }
+            do {
+                attachments.append(try AgentAttachmentLoader.attachment(imageData: data, name: "Photo"))
+            } catch {
+                attachmentProblem = error.localizedDescription
+            }
+        }
+    }
+
+    private func stageFiles(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            for url in urls {
+                do {
+                    attachments.append(try AgentAttachmentLoader.attachment(fileAt: url))
+                } catch {
+                    attachmentProblem = error.localizedDescription
+                }
+            }
+        case .failure(let error):
+            attachmentProblem = error.localizedDescription
+        }
     }
 
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && controller.canAcceptTypedMessage
+        let hasContent = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+        return hasContent && controller.canAcceptTypedMessage
+            && !(controller.conversationActive && !attachments.isEmpty)
     }
 
     /// The draft is cleared only once the controller has taken it, so a
@@ -776,10 +979,13 @@ private struct MessageComposer: View {
     private func send() {
         guard canSend else { return }
         let text = draft
+        let staged = attachments
         draft = ""
+        attachments = []
         Task {
-            if await !controller.sendTypedMessage(text, settings: settings), draft.isEmpty {
+            if await !controller.sendTypedMessage(text, settings: settings, attachments: staged), draft.isEmpty {
                 draft = text
+                if attachments.isEmpty { attachments = staged }
             }
         }
     }
@@ -826,7 +1032,8 @@ private struct QuickRequestBar: View {
                 .labelStyle(QuickRequestLabelStyle())
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
-                .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+                .background(AgentTheme.surface, in: Capsule())
+                .overlay(Capsule().stroke(AgentTheme.stroke))
         }
         .buttonStyle(.plain)
         .disabled(disabled)
@@ -878,7 +1085,8 @@ private struct AgentModelCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(.background, in: RoundedRectangle(cornerRadius: 18))
+        .background(AgentTheme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(AgentTheme.stroke))
     }
 }
 

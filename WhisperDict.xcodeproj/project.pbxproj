@@ -30,6 +30,7 @@
 		A10000000000000000000067 /* Keyboard AppearanceSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000065 /* AppearanceSettings.swift */; };
 		A10000000000000000000068 /* VoiceAgentSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000006B /* VoiceAgentSession.swift */; };
 		A10000000000000000000069 /* VoiceAgentController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000006C /* VoiceAgentController.swift */; };
+		E100000000000000000000C1 /* AgentAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = E100000000000000000000C2 /* AgentAttachment.swift */; };
 E100000000000000000000B1 /* PlaceContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = E100000000000000000000B2 /* PlaceContext.swift */; };
 		A1000000000000000000006A /* VoiceAgentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000006D /* VoiceAgentView.swift */; };
 		A1000000000000000000006E /* VoiceTurnDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000006F /* VoiceTurnDetector.swift */; };
@@ -137,6 +138,7 @@ E100000000000000000000A3 /* RealtimeResponseGate.swift in Sources */ = {isa = PB
 		A10000000000000000000065 /* AppearanceSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettings.swift; sourceTree = "<group>"; };
 		A1000000000000000000006B /* VoiceAgentSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAgentSession.swift; sourceTree = "<group>"; };
 		A1000000000000000000006C /* VoiceAgentController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAgentController.swift; sourceTree = "<group>"; };
+		E100000000000000000000C2 /* AgentAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAttachment.swift; sourceTree = "<group>"; };
 E100000000000000000000B2 /* PlaceContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceContext.swift; sourceTree = "<group>"; };
 		A1000000000000000000006D /* VoiceAgentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAgentView.swift; sourceTree = "<group>"; };
 		A1000000000000000000006F /* VoiceTurnDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTurnDetector.swift; sourceTree = "<group>"; };
@@ -218,6 +220,7 @@ E100000000000000000000A4 /* RealtimeResponseGate.swift */ = {isa = PBXFileRefere
 				A10000000000000000000050 /* DictationSessionController.swift */,
 				A10000000000000000000051 /* DictationAudioRecorder.swift */,
 				A10000000000000000000052 /* DictationTranscriber.swift */,
+				E100000000000000000000C2 /* AgentAttachment.swift */,
 				A1000000000000000000006C /* VoiceAgentController.swift */,
 				E100000000000000000000B2 /* PlaceContext.swift */,
 				A1000000000000000000006D /* VoiceAgentView.swift */,
@@ -480,6 +483,7 @@ E100000000000000000000A4 /* RealtimeResponseGate.swift */ = {isa = PBXFileRefere
 				A10000000000000000000060 /* TranscriptStore.swift in Sources */,
 				A10000000000000000000066 /* AppearanceSettings.swift in Sources */,
 				A10000000000000000000068 /* VoiceAgentSession.swift in Sources */,
+				E100000000000000000000C1 /* AgentAttachment.swift in Sources */,
 				A10000000000000000000069 /* VoiceAgentController.swift in Sources */,
 				E100000000000000000000B1 /* PlaceContext.swift in Sources */,
 				A1000000000000000000006A /* VoiceAgentView.swift in Sources */,
