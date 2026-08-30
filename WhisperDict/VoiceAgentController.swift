@@ -46,12 +46,9 @@ final class VoiceAgentController {
             earcon.setActive(phase == .thinking && usesRealtime && conversationActive)
         }
     }
-    private(set) var messages = [
-        VoiceAgentMessage(
-            role: .hermes,
-            text: "Talk to me naturally. I can have a real conversation, prepare messages, email, and notes, or open supported apps after you approve."
-        ),
-    ]
+    /// Starts empty: the thread is the person's, not a place for a canned
+    /// greeting they have to scroll past.
+    private(set) var messages: [VoiceAgentMessage] = []
     private(set) var audioLevel: Float = 0
     private(set) var elapsedSeconds = 0
     private(set) var session = VoiceAgentSession()
