@@ -247,6 +247,21 @@ final class VoiceAgentController {
         await open(mailto, failureMessage: "I couldn't open a mail app. Check that one is set up on this iPhone.")
     }
 
+    /// A blank Messages compose sheet from the Message chip: the person picks
+    /// the recipient and writes the text there, with nothing to ask first.
+    func openBlankMessageDraft() {
+        guard !isRecording, !isBusy else { return }
+        messagePayload = MessageComposePayload(body: "", recipients: [])
+    }
+
+    /// An app the person asked for by tapping its chip. The tap is the
+    /// approval, so there is no confirmation card and no round trip to
+    /// Hermes for something the phone can do on its own.
+    func openDestination(_ destination: VoiceAgentDestination) async {
+        guard !isRecording, !isBusy else { return }
+        await execute(.open(destination))
+    }
+
     func confirmPending() async {
         guard pendingAction != nil else { return }
         if let action = pendingRealtimeAction {
