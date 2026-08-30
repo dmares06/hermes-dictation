@@ -18,6 +18,10 @@ final class KeyboardViewController: UIInputViewController {
     // far too slow to do per keystroke.
     private let wordChecker = SystemWordChecker()
     private let keyFeedback = UIImpactFeedbackGenerator(style: .light)
+    private var suggestionRefresh: Task<Void, Never>?
+    /// Long enough for a burst of keystrokes to collapse into one dictionary
+    /// lookup, short enough that the strip still feels live.
+    private static let suggestionDelay: Duration = .milliseconds(60)
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -166,9 +170,23 @@ final class KeyboardViewController: UIInputViewController {
         textDocumentProxy.insertText(edit.insertedText)
     }
 
+    /// The dictionary lookups behind the strip cost tens of milliseconds,
+    /// which is a stutter if paid on every keystroke. They run a beat after
+    /// the last key instead, and only if the word is still the same one.
     private func refreshSuggestions() {
+        suggestionRefresh?.cancel()
         let word = KeyboardAutocorrect.currentWord(before: textDocumentProxy.documentContextBeforeInput)
-        keyboardState.suggestions = KeyboardAutocorrect.suggestions(for: word, checker: wordChecker)
+        guard word.count >= 2 else {
+            keyboardState.suggestions = []
+            return
+        }
+        suggestionRefresh = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.suggestionDelay)
+            guard !Task.isCancelled, let self else { return }
+            let current = KeyboardAutocorrect.currentWord(before: self.textDocumentProxy.documentContextBeforeInput)
+            guard current == word else { return }
+            self.keyboardState.suggestions = KeyboardAutocorrect.suggestions(for: word, checker: self.wordChecker)
+        }
     }
 
     /// The click and tap the system keyboard gives, which is most of why one
