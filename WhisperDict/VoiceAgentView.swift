@@ -34,7 +34,7 @@ struct VoiceAgentView: View {
                 // they are ways to start saying something, so they belong next
                 // to the field where you would have typed it.
                 if !controller.conversationActive {
-                    QuickRequestBar(controller: controller)
+                    QuickRequestBar(controller: controller, settings: settings)
                 }
                 MessageComposer(
                     controller: controller,
@@ -983,13 +983,17 @@ private struct MessageComposer: View {
 /// with, not a card the thread has to scroll around.
 private struct QuickRequestBar: View {
     let controller: VoiceAgentController
+    let settings: SharedState
 
     private struct Request: Identifiable {
         enum Action {
-            /// Sent to Hermes as if typed.
+            /// Sent to Hermes exactly as a typed message would be.
             case ask(String)
-            /// Handled on the phone: a new draft in the mail app, no questions.
+            /// Handled on the phone with no questions asked: a blank draft
+            /// in the mail app, a blank Messages sheet, or another app.
             case emailDraft
+            case messageDraft
+            case open(VoiceAgentDestination)
         }
 
         let title: String
@@ -1001,17 +1005,19 @@ private struct QuickRequestBar: View {
             switch action {
             case .ask(let request): "Asks Hermes: \(request)"
             case .emailDraft: "Opens a new email draft in your mail app"
+            case .messageDraft: "Opens a new message in Messages"
+            case .open: "Opens the app"
             }
         }
     }
 
     private static let requests: [Request] = [
         Request(title: "Email", icon: "envelope", action: .emailDraft),
+        Request(title: "Message", icon: "message", action: .messageDraft),
         Request(title: "Note", icon: "note.text", action: .ask("Create a note")),
-        Request(title: "Message", icon: "message", action: .ask("Send a message")),
         Request(title: "Reminder", icon: "bell", action: .ask("Remind me")),
-        Request(title: "Gmail", icon: "tray.full", action: .ask("Open Gmail")),
-        Request(title: "Maps", icon: "map", action: .ask("Open Maps")),
+        Request(title: "Gmail", icon: "tray.full", action: .open(.gmailWeb)),
+        Request(title: "Maps", icon: "map", action: .open(.maps)),
     ]
 
     var body: some View {
@@ -1043,19 +1049,23 @@ private struct QuickRequestBar: View {
         .accessibilityHint(item.hint)
     }
 
+    /// Requests for Hermes take the typed-message path, so they reach the
+    /// same brain as anything typed in the field — not the phone's own
+    /// canned flow, which used to answer chips with questions of its own.
     private func perform(_ action: Request.Action) async {
         switch action {
-        case .ask(let request): await controller.submitText(request)
+        case .ask(let request): await controller.sendTypedMessage(request, settings: settings)
         case .emailDraft: await controller.openBlankEmailDraft()
+        case .messageDraft: controller.openBlankMessageDraft()
+        case .open(let destination): await controller.openDestination(destination)
         }
     }
 
+    /// Chips rest only while something is genuinely in flight: a recording,
+    /// a Hermes turn, or an action waiting on approval. Once that clears
+    /// they are tappable again, one after another.
     private var disabled: Bool {
-        controller.isRecording
-            || controller.conversationActive
-            || controller.isBusy
-            || controller.pendingAction != nil
-            || controller.session.step != .idle
+        controller.isRecording || !controller.canAcceptTypedMessage
     }
 }
 
