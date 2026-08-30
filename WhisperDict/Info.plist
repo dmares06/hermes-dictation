@@ -27,6 +27,15 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>6</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>googlegmail</string>
+		<string>maps</string>
+		<string>calshow</string>
+		<string>music</string>
+		<string>youtube</string>
+		<string>spotify</string>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>WhisperDict uses the microphone to convert your speech to text on this device.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

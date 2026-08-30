@@ -14,6 +14,12 @@ struct VoiceAgentView: View {
             VStack(spacing: 0) {
                 transcript
                 Divider()
+                // Quick requests live with the composer, not in the thread:
+                // they are ways to start saying something, so they belong next
+                // to the field where you would have typed it.
+                if !controller.conversationActive {
+                    QuickRequestBar(controller: controller)
+                }
                 MessageComposer(controller: controller, settings: settings)
                 AgentRecordingCard(
                     controller: controller,
@@ -87,13 +93,6 @@ struct VoiceAgentView: View {
 
                     ForEach(controller.messages) { message in
                         entry(for: message).id(message.id)
-                    }
-
-                    // Below the thread, not above it: these are disabled while
-                    // a conversation is running, so they belong where they are
-                    // reachable when idle without pushing the transcript down.
-                    if !controller.conversationActive {
-                        QuickRequests(controller: controller)
                     }
 
                     if let action = controller.pendingAction {
@@ -695,7 +694,7 @@ private struct PendingActionCard: View {
         case .composeMessage(let text):
             detail("Message", text)
         case .open(.gmailWeb):
-            detail("Destination", "Gmail in your browser")
+            detail("Destination", "The Gmail app, or Gmail on the web if it isn't installed")
         case .open(.appSettings):
             detail("Destination", "WhisperDict Settings")
         case .open(.maps):
@@ -786,45 +785,73 @@ private struct MessageComposer: View {
     }
 }
 
-private struct QuickRequests: View {
+/// One quiet row of capsule chips above the composer — suggestions to start
+/// with, not a card the thread has to scroll around.
+private struct QuickRequestBar: View {
     let controller: VoiceAgentController
 
+    private struct Request: Identifiable {
+        let title: String
+        let icon: String
+        let request: String
+        var id: String { title }
+    }
+
+    private static let requests: [Request] = [
+        Request(title: "Email", icon: "envelope", request: "Compose an email"),
+        Request(title: "Note", icon: "note.text", request: "Create a note"),
+        Request(title: "Message", icon: "message", request: "Send a message"),
+        Request(title: "Reminder", icon: "bell", request: "Remind me"),
+        Request(title: "Gmail", icon: "tray.full", request: "Open Gmail"),
+        Request(title: "Maps", icon: "map", request: "Open Maps"),
+    ]
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Try a request").font(.headline)
-            ViewThatFits(in: .horizontal) {
-                HStack {
-                    buttons
-                }
-                VStack(alignment: .leading) {
-                    buttons
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Self.requests) { item in
+                    chip(item.title, icon: item.icon, request: item.request)
                 }
             }
+            .padding(.horizontal)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(.background, in: RoundedRectangle(cornerRadius: 18))
+        .padding(.top, 10)
+        .accessibilityLabel("Quick requests")
     }
 
-    @ViewBuilder
-    private var buttons: some View {
-        quickButton("Compose email", request: "Compose an email")
-        quickButton("Create note", request: "Create a note")
-        quickButton("Send message", request: "Send a message")
-        quickButton("Open Gmail", request: "Open Gmail")
-        quickButton("Open Maps", request: "Open Maps")
+    private func chip(_ title: String, icon: String, request: String) -> some View {
+        Button { Task { await controller.submitText(request) } } label: {
+            Label(title, systemImage: icon)
+                .font(.footnote.weight(.medium))
+                .labelStyle(QuickRequestLabelStyle())
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.4 : 1)
+        .accessibilityHint("Asks Hermes: \(request)")
     }
 
-    private func quickButton(_ title: String, request: String) -> some View {
-        Button(title) { Task { await controller.submitText(request) } }
-            .buttonStyle(.bordered)
-            .disabled(
-                controller.isRecording
-                    || controller.conversationActive
-                    || controller.isBusy
-                    || controller.pendingAction != nil
-                    || controller.session.step != .idle
-            )
+    private var disabled: Bool {
+        controller.isRecording
+            || controller.conversationActive
+            || controller.isBusy
+            || controller.pendingAction != nil
+            || controller.session.step != .idle
+    }
+}
+
+private struct QuickRequestLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 5) {
+            configuration.icon
+                .font(.caption)
+                .foregroundStyle(.mint)
+            configuration.title
+                .foregroundStyle(.primary)
+        }
     }
 }
 

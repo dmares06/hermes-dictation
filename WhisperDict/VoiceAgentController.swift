@@ -1019,21 +1019,20 @@ final class VoiceAgentController {
                 recipients: conversationSettings?.messageRecipients ?? []
             )
         case .open(.gmailWeb):
-            guard let url = URL(string: "https://mail.google.com/") else { return }
-            await open(url, failureMessage: "I couldn't open Gmail in your browser.")
+            await openDestination(app: "googlegmail://", web: "https://mail.google.com/", name: "Gmail")
         case .open(.appSettings):
             guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
             await open(url, failureMessage: "I couldn't open Settings.")
         case .open(.maps):
-            await openDestination("https://maps.apple.com/", name: "Maps")
+            await openDestination(app: "maps://", web: "https://maps.apple.com/", name: "Maps")
         case .open(.calendar):
-            await openDestination("calshow://", name: "Calendar")
+            await openDestination(app: "calshow://", web: nil, name: "Calendar")
         case .open(.music):
-            await openDestination("music://", name: "Music")
+            await openDestination(app: "music://", web: nil, name: "Music")
         case .open(.youtube):
-            await openDestination("https://www.youtube.com/", name: "YouTube")
+            await openDestination(app: "youtube://", web: "https://www.youtube.com/", name: "YouTube")
         case .open(.spotify):
-            await openDestination("https://open.spotify.com/", name: "Spotify")
+            await openDestination(app: "spotify://", web: "https://open.spotify.com/", name: "Spotify")
         case .runShortcut(let name):
             var components = URLComponents()
             components.scheme = "shortcuts"
@@ -1047,9 +1046,19 @@ final class VoiceAgentController {
         }
     }
 
-    private func openDestination(_ value: String, name: String) async {
-        guard let url = URL(string: value) else { return }
-        await open(url, failureMessage: "I couldn't open \(name) on this iPhone.")
+    /// Opens the destination's own app when it is installed, and only falls
+    /// back to the web when it is not: landing in Safari while the app sits on
+    /// the home screen is a detour, not a shortcut. The schemes are declared
+    /// in LSApplicationQueriesSchemes so canOpenURL can answer honestly.
+    private func openDestination(app appValue: String, web webValue: String?, name: String) async {
+        if let appURL = URL(string: appValue), UIApplication.shared.canOpenURL(appURL) {
+            if await UIApplication.shared.open(appURL) { return }
+        }
+        guard let webValue, let webURL = URL(string: webValue) else {
+            await reportHandoffFailure("I couldn't open \(name) on this iPhone.")
+            return
+        }
+        await open(webURL, failureMessage: "I couldn't open \(name) on this iPhone.")
     }
 
     private func handleRealtimeState(_ state: RealtimeAgentClient.State) {

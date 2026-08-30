@@ -393,7 +393,7 @@ public struct VoiceAgentSession: Sendable {
         case .runShortcut(let name):
             message = "Opening Shortcuts to run \(name)."
         case .open(.gmailWeb):
-            message = "Opening Gmail in your browser."
+            message = "Opening Gmail."
         case .open(.appSettings):
             message = "Opening Settings."
         case .open(.maps):
@@ -461,7 +461,7 @@ public struct VoiceAgentSession: Sendable {
             let action = VoiceAgentAction.open(.gmailWeb)
             state = .confirmation(action)
             return VoiceAgentTurn(
-                assistantMessage: "I can open Gmail in your browser. This will leave Hermes. Say confirm to continue."
+                assistantMessage: "I can open the Gmail app. This will leave Hermes. Say confirm to continue."
             )
         }
         if intent.contains("settings"), Self.containsAny(intent, phrases: ["open", "show", "go to"]) {
