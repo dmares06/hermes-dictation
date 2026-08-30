@@ -14,6 +14,14 @@ struct KeyboardView: View {
 
     @State private var mode: KeyboardMode = .letters
     @State private var isShifted = false
+    /// Keys with a finger on them right now; several at once while typing fast.
+    @State private var pressedKeys: Set<KeyboardKey> = []
+    @State private var deleteRepeat: Task<Void, Never>?
+
+    /// The row above the keys never changes height: the suggestions and the
+    /// dictation status take turns inside it, so the keyboard stays put
+    /// instead of jumping every time a word starts or finishes.
+    private static let suggestionSlotHeight: CGFloat = 36
 
     var body: some View {
         VStack(spacing: 7) {
@@ -48,40 +56,106 @@ struct KeyboardView: View {
 
                 // The strip and the dictation status share a row: only one of
                 // them is ever relevant, and vertical space above the keys is
-                // the scarcest thing in a keyboard.
-                if state.suggestions.isEmpty {
-                    Text(state.handoffStatus ?? defaultHandoffStatus)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    SuggestionStrip(
-                        suggestions: state.suggestions,
-                        onApply: onApplySuggestion
-                    )
-                }
-            }
-
-            ForEach(Array(layout.rows.enumerated()), id: \.offset) { _, row in
-                HStack(spacing: 5) {
-                    ForEach(Array(row.enumerated()), id: \.offset) { _, key in
-                        KeyButton(
-                            key: key,
-                            shifted: isShifted,
-                            numericMode: mode == .numbers,
-                            showsNextKeyboard: state.showsNextKeyboard,
-                            action: { handle(key) },
-                            onPressFeedback: onKeyFeedback
+                // the scarcest thing in a keyboard. The row is a fixed slot
+                // so swapping them never resizes the keyboard.
+                ZStack {
+                    if state.suggestions.isEmpty {
+                        Text(state.handoffStatus ?? defaultHandoffStatus)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.9)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        SuggestionStrip(
+                            suggestions: state.suggestions,
+                            onApply: onApplySuggestion
                         )
                     }
                 }
+                .frame(maxWidth: .infinity)
+                .frame(height: Self.suggestionSlotHeight)
+                .clipped()
             }
+
+            keyGrid
         }
         .padding(.horizontal, 5)
         .padding(.top, 6)
         .padding(.bottom, 8)
         .background(keyboardColor.opacity(0.24))
+        .onDisappear {
+            pressedKeys = []
+            stopRepeatingDelete()
+        }
+    }
+
+    /// The caps draw; the touch surface over them types. Each cap reports
+    /// where it is so the surface can turn a finger into a key.
+    private var keyGrid: some View {
+        VStack(spacing: 7) {
+            ForEach(Array(layout.rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 5) {
+                    ForEach(Array(row.enumerated()), id: \.offset) { _, key in
+                        KeyCap(
+                            key: key,
+                            shifted: isShifted,
+                            numericMode: mode == .numbers,
+                            showsNextKeyboard: state.showsNextKeyboard,
+                            isPressed: pressedKeys.contains(key),
+                            action: { handle(key) }
+                        )
+                        .anchorPreference(key: KeyFramesKey.self, value: .bounds) { [key: $0] }
+                    }
+                }
+            }
+        }
+        .overlayPreferenceValue(KeyFramesKey.self) { anchors in
+            GeometryReader { proxy in
+                KeyTouchSurface(
+                    frames: anchors.mapValues { proxy[$0] },
+                    onPress: press,
+                    onRelease: release
+                )
+            }
+        }
+    }
+
+    /// A key fires the instant the finger lands, never on lift: firing on
+    /// touch-up is what makes fast typing feel like it drops characters.
+    private func press(_ key: KeyboardKey) {
+        guard !pressedKeys.contains(key) else { return }
+        pressedKeys.insert(key)
+        onKeyFeedback()
+        if key == .delete {
+            startRepeatingDelete()
+        } else {
+            handle(key)
+        }
+    }
+
+    private func release(_ key: KeyboardKey) {
+        pressedKeys.remove(key)
+        if key == .delete { stopRepeatingDelete() }
+    }
+
+    private func startRepeatingDelete() {
+        guard deleteRepeat == nil else { return }
+        onDelete()
+        // Held delete accelerates the way the system keyboard does: a pause
+        // long enough to mean "I meant one character", then a steady run.
+        deleteRepeat = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            while !Task.isCancelled {
+                onDelete()
+                try? await Task.sleep(for: .milliseconds(70))
+            }
+        }
+    }
+
+    private func stopRepeatingDelete() {
+        deleteRepeat?.cancel()
+        deleteRepeat = nil
     }
 
     private var layout: KeyboardLayout {
@@ -187,41 +261,33 @@ private enum KeyboardMode {
     case numbers
 }
 
-private struct KeyButton: View {
+/// Where each cap ended up, in the grid's coordinates, for the touch surface.
+private struct KeyFramesKey: PreferenceKey {
+    static let defaultValue: [KeyboardKey: Anchor<CGRect>] = [:]
+    static func reduce(value: inout [KeyboardKey: Anchor<CGRect>], nextValue: () -> [KeyboardKey: Anchor<CGRect>]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+/// A key as drawn. Touches are handled by the surface above the grid, so
+/// this only has to look right — pressed or not — and answer VoiceOver.
+private struct KeyCap: View {
     let key: KeyboardKey
     let shifted: Bool
     let numericMode: Bool
     let showsNextKeyboard: Bool
+    let isPressed: Bool
     let action: () -> Void
-    let onPressFeedback: () -> Void
-    @State private var repeatTask: Task<Void, Never>?
-    @State private var isPressed = false
 
     var body: some View {
         keyCap
-            // The hit area is the whole cell including the gap around the cap,
-            // so a finger landing between two keys still lands on one of them.
-            .contentShape(Rectangle())
             .overlay(alignment: .top) { popup }
             .zIndex(isPressed ? 1 : 0)
-            .gesture(
-                // A key must fire the instant the finger lands, not on lift:
-                // firing on touch-up is what makes fast typing feel like it
-                // drops characters, because a quick tap that slides a little
-                // never completes as a tap at all. A drag with no minimum
-                // distance is the only SwiftUI gesture that reports touch
-                // down, and latching on `isPressed` keeps the continuous
-                // stream of drag updates from repeating the keystroke.
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in press() }
-                    .onEnded { _ in release() }
-            )
             .opacity(key == .globe && !showsNextKeyboard ? 0.45 : 1)
             .accessibilityLabel(accessibilityLabel)
             .accessibilityAddTraits(.isButton)
-            // VoiceOver drives the key through this, not the drag gesture.
+            // VoiceOver drives the key through this, not the touch surface.
             .accessibilityAction { action() }
-            .onDisappear(perform: release)
     }
 
     @ViewBuilder
@@ -237,22 +303,6 @@ private struct KeyButton: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
-    }
-
-    private func press() {
-        guard !isPressed else { return }
-        isPressed = true
-        onPressFeedback()
-        if key == .delete {
-            startRepeatingDelete()
-        } else {
-            action()
-        }
-    }
-
-    private func release() {
-        isPressed = false
-        stopRepeatingDelete()
     }
 
     private var keyCap: some View {
@@ -283,25 +333,6 @@ private struct KeyButton: View {
             .shadow(color: .black.opacity(0.16), radius: 0.5, y: 1)
     }
 
-    private func startRepeatingDelete() {
-        guard repeatTask == nil else { return }
-        action()
-        // Held delete accelerates the way the system keyboard does: a pause
-        // long enough to mean "I meant one character", then a steady run.
-        repeatTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(350))
-            while !Task.isCancelled {
-                action()
-                try? await Task.sleep(for: .milliseconds(70))
-            }
-        }
-    }
-
-    private func stopRepeatingDelete() {
-        repeatTask?.cancel()
-        repeatTask = nil
-    }
-
     private var minimumWidth: CGFloat {
         switch key {
         case .space: 120
@@ -310,10 +341,14 @@ private struct KeyButton: View {
         }
     }
 
+    /// A pressed cap darkens the way the system keyboard's does, so the
+    /// finger gets an answer even on keys with no popup.
     private var backgroundColor: Color {
         switch key {
-        case .character, .space: Color(uiColor: .systemBackground)
-        default: Color(uiColor: .systemGray3)
+        case .character, .space:
+            isPressed ? Color(uiColor: .systemGray4) : Color(uiColor: .systemBackground)
+        default:
+            isPressed ? Color(uiColor: .systemBackground) : Color(uiColor: .systemGray3)
         }
     }
 
