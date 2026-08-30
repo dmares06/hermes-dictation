@@ -2,6 +2,16 @@ import XCTest
 @testable import WhisperDictCore
 
 final class HermesStreamedSpeechTests: XCTestCase {
+    func testAPictureInTheReplyIsShownNotSpoken() {
+        var speech = HermesStreamedSpeech()
+        XCTAssertEqual(speech.append("Here is one. "), ["Here is one."])
+        XCTAssertEqual(speech.append("![A russet potato](https://x.io/potato.jpg)"), [])
+        let finished = speech.finish(completedText: nil)
+        XCTAssertEqual(finished.spoken, "Here is one.")
+        XCTAssertNil(finished.remainingSpeech)
+        XCTAssertEqual(finished.images, [.remote(URL(string: "https://x.io/potato.jpg")!)])
+    }
+
     func testSentencesAreSpokenAsTheyCompleteWithMarkdownStripped() {
         var speech = HermesStreamedSpeech()
         XCTAssertEqual(speech.append("It is **82** degrees"), [])
