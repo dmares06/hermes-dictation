@@ -985,26 +985,40 @@ private struct QuickRequestBar: View {
     let controller: VoiceAgentController
 
     private struct Request: Identifiable {
+        enum Action {
+            /// Sent to Hermes as if typed.
+            case ask(String)
+            /// Handled on the phone: a new draft in the mail app, no questions.
+            case emailDraft
+        }
+
         let title: String
         let icon: String
-        let request: String
+        let action: Action
         var id: String { title }
+
+        var hint: String {
+            switch action {
+            case .ask(let request): "Asks Hermes: \(request)"
+            case .emailDraft: "Opens a new email draft in your mail app"
+            }
+        }
     }
 
     private static let requests: [Request] = [
-        Request(title: "Email", icon: "envelope", request: "Compose an email"),
-        Request(title: "Note", icon: "note.text", request: "Create a note"),
-        Request(title: "Message", icon: "message", request: "Send a message"),
-        Request(title: "Reminder", icon: "bell", request: "Remind me"),
-        Request(title: "Gmail", icon: "tray.full", request: "Open Gmail"),
-        Request(title: "Maps", icon: "map", request: "Open Maps"),
+        Request(title: "Email", icon: "envelope", action: .emailDraft),
+        Request(title: "Note", icon: "note.text", action: .ask("Create a note")),
+        Request(title: "Message", icon: "message", action: .ask("Send a message")),
+        Request(title: "Reminder", icon: "bell", action: .ask("Remind me")),
+        Request(title: "Gmail", icon: "tray.full", action: .ask("Open Gmail")),
+        Request(title: "Maps", icon: "map", action: .ask("Open Maps")),
     ]
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(Self.requests) { item in
-                    chip(item.title, icon: item.icon, request: item.request)
+                    chip(item)
                 }
             }
             .padding(.horizontal)
@@ -1013,9 +1027,9 @@ private struct QuickRequestBar: View {
         .accessibilityLabel("Quick requests")
     }
 
-    private func chip(_ title: String, icon: String, request: String) -> some View {
-        Button { Task { await controller.submitText(request) } } label: {
-            Label(title, systemImage: icon)
+    private func chip(_ item: Request) -> some View {
+        Button { Task { await perform(item.action) } } label: {
+            Label(item.title, systemImage: item.icon)
                 .font(.footnote.weight(.medium))
                 .labelStyle(QuickRequestLabelStyle())
                 .padding(.horizontal, 12)
@@ -1026,7 +1040,14 @@ private struct QuickRequestBar: View {
         .buttonStyle(.plain)
         .disabled(disabled)
         .opacity(disabled ? 0.4 : 1)
-        .accessibilityHint("Asks Hermes: \(request)")
+        .accessibilityHint(item.hint)
+    }
+
+    private func perform(_ action: Request.Action) async {
+        switch action {
+        case .ask(let request): await controller.submitText(request)
+        case .emailDraft: await controller.openBlankEmailDraft()
+        }
     }
 
     private var disabled: Bool {

@@ -234,6 +234,19 @@ final class VoiceAgentController {
         await process(text)
     }
 
+    /// A blank draft in the person's own mail app, straight from the Email
+    /// chip: Gmail's compose screen when Gmail is installed, the default mail
+    /// app otherwise. Nothing goes through Hermes, so there is no "to whom?"
+    /// round trip — they fill the draft in where they would have written it.
+    func openBlankEmailDraft() async {
+        guard !isRecording, !isBusy else { return }
+        if let gmail = URL(string: "googlegmail:///co"), UIApplication.shared.canOpenURL(gmail) {
+            if await UIApplication.shared.open(gmail) { return }
+        }
+        guard let mailto = URL(string: "mailto:") else { return }
+        await open(mailto, failureMessage: "I couldn't open a mail app. Check that one is set up on this iPhone.")
+    }
+
     func confirmPending() async {
         guard pendingAction != nil else { return }
         if let action = pendingRealtimeAction {
