@@ -36,15 +36,21 @@ struct VoiceAgentView: View {
                 if !controller.conversationActive {
                     QuickRequestBar(controller: controller)
                 }
-                MessageComposer(controller: controller, settings: settings)
-                AgentRecordingCard(
+                MessageComposer(
                     controller: controller,
-                    modelReady: downloadService.isPrepared,
-                    color: settings.recordButtonColor,
-                    action: { Task { await controller.performPrimaryAction(settings: settings) } },
-                    startFallback: { Task { await controller.startHermesConversation(settings: settings) } },
-                    endConversation: { Task { await controller.endConversation() } }
+                    settings: settings,
+                    primaryAction: { Task { await controller.performPrimaryAction(settings: settings) } }
                 )
+                // The call readout (status, timer, level meter) exists only
+                // while there is a call to read out, so the rest of the time
+                // the composer sits directly above the keyboard.
+                if controller.conversationActive || controller.canUseOfflineMode {
+                    AgentRecordingCard(
+                        controller: controller,
+                        startFallback: { Task { await controller.startHermesConversation(settings: settings) } },
+                        endConversation: { Task { await controller.endConversation() } }
+                    )
+                }
             }
             .background(AgentTheme.background)
             .navigationBarTitleDisplayMode(.inline)
@@ -129,10 +135,6 @@ struct VoiceAgentView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 12) {
-                    if showsIntroduction {
-                        AgentBoundaryCard()
-                    }
-
                     ForEach(controller.messages) { message in
                         entry(for: message).id(message.id)
                     }
@@ -178,12 +180,6 @@ struct VoiceAgentView: View {
     }
 
     private static let pendingActionID = "pending-action"
-
-    /// The opening card is for someone who has not started yet. Once there is a
-    /// thread to read it would only be padding above it.
-    private var showsIntroduction: Bool {
-        !controller.conversationActive && controller.messages.count <= 1
-    }
 
     @ViewBuilder
     private func entry(for message: VoiceAgentMessage) -> some View {
@@ -282,35 +278,17 @@ private struct TranscriptBubble: View {
     }
 }
 
-private struct AgentBoundaryCard: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("You stay in control", systemImage: "checkmark.shield")
-                .font(.headline)
-                .foregroundStyle(AgentTheme.accent)
-            Text("Tap once to start a live conversation. Hermes listens for the end of each turn, answers aloud, and listens again. External actions still wait for your confirmation.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(AgentTheme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(AgentTheme.stroke))
-    }
-}
-
+/// The live-call readout under the composer: status, timer, level meter and
+/// the escape hatches. The mic itself is `AgentMicButton` in the composer.
 private struct AgentRecordingCard: View {
     let controller: VoiceAgentController
-    let modelReady: Bool
-    let color: AppearanceColor
-    let action: () -> Void
     /// Hermes with the phone's own transcription and voice, for when the
     /// live audio session cannot be set up.
     let startFallback: () -> Void
     let endConversation: () -> Void
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             Text(controller.statusText)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(statusColor)
@@ -322,26 +300,6 @@ private struct AgentRecordingCard: View {
                     .foregroundStyle(.secondary)
                 AgentLevelMeter(level: controller.audioLevel, active: controller.isRecording)
             }
-
-            Button(action: action) {
-                ZStack {
-                    Circle()
-                        .fill(buttonColor)
-                        .frame(width: 78, height: 78)
-                        .shadow(color: buttonColor.opacity(0.25), radius: 14, y: 6)
-                    if controller.isBusy && !(controller.usesRealtime && controller.conversationActive) {
-                        ProgressView().tint(buttonForeground).scaleEffect(1.3)
-                    } else {
-                        Image(systemName: primaryIcon)
-                            .font(.system(size: 29, weight: .semibold))
-                            .foregroundStyle(buttonForeground)
-                    }
-                }
-            }
-            .buttonStyle(.plain)
-            .disabled(controller.primaryAction == .wait)
-            .accessibilityLabel(primaryAccessibilityLabel)
-            .accessibilityHint(primaryAccessibilityHint)
 
             if controller.conversationActive && !controller.usesRealtime {
                 Button("End conversation", role: .destructive, action: endConversation)
@@ -361,7 +319,7 @@ private struct AgentRecordingCard: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 12)
+        .padding(.top, 8)
         .padding(.bottom, 6)
         .padding(.horizontal)
         .background(AgentTheme.background)
@@ -373,20 +331,9 @@ private struct AgentRecordingCard: View {
         return controller.conversationActive ? .red : .primary
     }
 
-    private var buttonColor: Color {
-        controller.conversationActive ? .red : Color(appearanceColor: color)
-    }
-
-    private var buttonForeground: Color {
-        guard !controller.conversationActive, color.prefersDarkForeground else { return .white }
-        return .black
-    }
-
     private var instructionText: String {
         guard controller.conversationActive else {
-            return modelReady
-                ? "Tap once to talk to Hermes"
-                : "Tap once to talk to Hermes. Prepare the speech model in Dictation for the slower fallback."
+            return "Tap the mic to try again"
         }
         switch controller.phase {
         case .connecting: return "Creating a secure live audio session…"
@@ -401,18 +348,56 @@ private struct AgentRecordingCard: View {
         case .failed: return "End the conversation, then try again"
         }
     }
+}
 
-    private var primaryIcon: String {
-        if controller.usesRealtime && controller.conversationActive { return "phone.down.fill" }
-        return controller.isRecording ? "checkmark" : "waveform.and.mic"
+/// The one voice control, sized to sit in the composer row: starts a live
+/// conversation, finishes a turn while recording, and ends a Realtime call.
+private struct AgentMicButton: View {
+    let controller: VoiceAgentController
+    let color: AppearanceColor
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill(buttonColor)
+                    .frame(width: 36, height: 36)
+                if controller.isBusy && !(controller.usesRealtime && controller.conversationActive) {
+                    ProgressView().tint(buttonForeground).controlSize(.small)
+                } else {
+                    Image(systemName: icon)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(buttonForeground)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(controller.primaryAction == .wait)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityHint(accessibilityHint)
     }
 
-    private var primaryAccessibilityLabel: String {
+    private var buttonColor: Color {
+        controller.conversationActive ? .red : Color(appearanceColor: color)
+    }
+
+    private var buttonForeground: Color {
+        guard !controller.conversationActive, color.prefersDarkForeground else { return .white }
+        return .black
+    }
+
+    private var icon: String {
+        if controller.usesRealtime && controller.conversationActive { return "phone.down.fill" }
+        return controller.isRecording ? "checkmark" : "mic.fill"
+    }
+
+    private var accessibilityLabel: String {
         if controller.usesRealtime && controller.conversationActive { return "End live conversation" }
         return controller.isRecording ? "Finish speaking" : "Start conversation"
     }
 
-    private var primaryAccessibilityHint: String {
+    private var accessibilityHint: String {
         if controller.usesRealtime && controller.conversationActive {
             return "Disconnects the Realtime voice conversation"
         }
@@ -817,6 +802,8 @@ private struct PendingActionCard: View {
 private struct MessageComposer: View {
     let controller: VoiceAgentController
     let settings: SharedState
+    /// Start a conversation, finish a turn, or end a call — the mic button.
+    let primaryAction: () -> Void
     @State private var draft = ""
     @State private var attachments: [AgentAttachment] = []
     @State private var attachmentProblem: String?
@@ -830,8 +817,9 @@ private struct MessageComposer: View {
             if !attachments.isEmpty {
                 stagedAttachments
             }
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 attachButton
+                AgentMicButton(controller: controller, color: settings.recordButtonColor, action: primaryAction)
                 TextField("Message Hermes…", text: $draft)
                     .submitLabel(.send)
                     .focused($isFocused)
