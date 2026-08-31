@@ -109,4 +109,18 @@ final class KeyboardAutocorrectTests: XCTestCase {
             KeyboardTextEdit(deleteBackwardCount: 3, insertedText: "the")
         )
     }
+
+    func testALateCorrectionRemovesTheTerminatorAndPutsItBack() {
+        // Fast typing gets the space in before the dictionary answers; the
+        // correction then has to take out the word and the terminator, and
+        // restore the terminator after the fixed word.
+        XCTAssertEqual(
+            KeyboardAutocorrect.replacementBehindTerminator(of: "teh", with: "the", terminator: " "),
+            KeyboardTextEdit(deleteBackwardCount: 4, insertedText: "the ")
+        )
+        XCTAssertEqual(
+            KeyboardAutocorrect.replacementBehindTerminator(of: "recieve", with: "receive", terminator: "."),
+            KeyboardTextEdit(deleteBackwardCount: 8, insertedText: "receive.")
+        )
+    }
 }
