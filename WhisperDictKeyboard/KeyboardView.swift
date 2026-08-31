@@ -1,5 +1,12 @@
 import SwiftUI
 
+/// Composes the keyboard out of pieces that re-render independently.
+///
+/// This body reads no observable state at all — deliberately. The top bar
+/// reads the transcript, status and suggestions; the grid reads pressed keys
+/// and shift. Kept separate, a keystroke redraws only the grid and a
+/// suggestion only the strip, instead of every touch re-rendering the whole
+/// keyboard.
 struct KeyboardView: View {
     let state: KeyboardState
     let onOpenRecorder: () -> Void
@@ -12,11 +19,45 @@ struct KeyboardView: View {
     /// with the keystroke, never after it.
     let onKeyFeedback: () -> Void
 
-    @State private var mode: KeyboardMode = .letters
-    @State private var isShifted = false
-    /// Keys with a finger on them right now; several at once while typing fast.
-    @State private var pressedKeys: Set<KeyboardKey> = []
-    @State private var deleteRepeat: Task<Void, Never>?
+    var body: some View {
+        VStack(spacing: 7) {
+            KeyboardTopBar(
+                state: state,
+                onOpenRecorder: onOpenRecorder,
+                onInsert: onInsert,
+                onApplySuggestion: onApplySuggestion
+            )
+            KeyGrid(
+                state: state,
+                onInsert: onInsert,
+                onDelete: onDelete,
+                onNextKeyboard: onNextKeyboard,
+                onKeyFeedback: onKeyFeedback
+            )
+        }
+        .padding(.horizontal, 5)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
+        .background(KeyboardBackdrop(state: state))
+    }
+}
+
+/// Reads the appearance color in its own body so a color change repaints
+/// this rectangle alone, not the keyboard above it.
+private struct KeyboardBackdrop: View {
+    let state: KeyboardState
+
+    var body: some View {
+        Color(appearanceColor: state.keyboardColor).opacity(0.24)
+    }
+}
+
+/// The recorder handoff controls and the suggestion/status row.
+private struct KeyboardTopBar: View {
+    let state: KeyboardState
+    let onOpenRecorder: () -> Void
+    let onInsert: (String) -> Void
+    let onApplySuggestion: (KeyboardSuggestion) -> Void
 
     /// The row above the keys never changes height: the suggestions and the
     /// dictation status take turns inside it, so the keyboard stays put
@@ -24,146 +65,58 @@ struct KeyboardView: View {
     private static let suggestionSlotHeight: CGFloat = 36
 
     var body: some View {
-        VStack(spacing: 7) {
-            VStack(spacing: 4) {
-                HStack(spacing: 8) {
-                    // Hands off to the app's recorder. It is the only way to
-                    // dictate from a keyboard: iOS refuses a keyboard extension
-                    // the microphone even with Full Access (AVAudioEngine fails
-                    // with error 2003329396), so there is no in-keyboard path.
-                    Button(action: onOpenRecorder) {
-                        recordControlLabel
+        VStack(spacing: 4) {
+            HStack(spacing: 8) {
+                // Hands off to the app's recorder. It is the only way to
+                // dictate from a keyboard: iOS refuses a keyboard extension
+                // the microphone even with Full Access (AVAudioEngine fails
+                // with error 2003329396), so there is no in-keyboard path.
+                Button(action: onOpenRecorder) {
+                    recordControlLabel
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(recordButtonAccessibilityHint)
+
+                if !state.latestTranscript.isEmpty {
+                    Button {
+                        onInsert(state.latestTranscript)
+                    } label: {
+                        Image(systemName: "text.insert")
+                            .font(.footnote.weight(.semibold))
+                            .frame(minWidth: 38, minHeight: 34)
+                            .background(recordButtonColor.opacity(0.16), in: RoundedRectangle(cornerRadius: 9))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityHint(recordButtonAccessibilityHint)
-
-                    if !state.latestTranscript.isEmpty {
-                        Button {
-                            onInsert(state.latestTranscript)
-                        } label: {
-                            Image(systemName: "text.insert")
-                                .font(.footnote.weight(.semibold))
-                                .frame(minWidth: 38, minHeight: 34)
-                                .background(recordButtonColor.opacity(0.16), in: RoundedRectangle(cornerRadius: 9))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Insert latest transcript")
-                        .accessibilityHint("Inserts the most recent transcript created in WhisperDict")
-                    }
-
-                    Spacer(minLength: 0)
+                    .accessibilityLabel("Insert latest transcript")
+                    .accessibilityHint("Inserts the most recent transcript created in WhisperDict")
                 }
 
-                // The strip and the dictation status share a row: only one of
-                // them is ever relevant, and vertical space above the keys is
-                // the scarcest thing in a keyboard. The row is a fixed slot
-                // so swapping them never resizes the keyboard.
-                ZStack {
-                    if state.suggestions.isEmpty {
-                        Text(state.handoffStatus ?? defaultHandoffStatus)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.9)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        SuggestionStrip(
-                            suggestions: state.suggestions,
-                            onApply: onApplySuggestion
-                        )
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: Self.suggestionSlotHeight)
-                .clipped()
+                Spacer(minLength: 0)
             }
 
-            keyGrid
-        }
-        .padding(.horizontal, 5)
-        .padding(.top, 6)
-        .padding(.bottom, 8)
-        .background(keyboardColor.opacity(0.24))
-        .onDisappear {
-            pressedKeys = []
-            stopRepeatingDelete()
-        }
-    }
-
-    /// The caps draw; the touch surface over them types. Each cap reports
-    /// where it is so the surface can turn a finger into a key.
-    private var keyGrid: some View {
-        VStack(spacing: 7) {
-            ForEach(Array(layout.rows.enumerated()), id: \.offset) { _, row in
-                HStack(spacing: 5) {
-                    ForEach(Array(row.enumerated()), id: \.offset) { _, key in
-                        KeyCap(
-                            key: key,
-                            shifted: isShifted,
-                            numericMode: mode == .numbers,
-                            showsNextKeyboard: state.showsNextKeyboard,
-                            isPressed: pressedKeys.contains(key),
-                            action: { handle(key) }
-                        )
-                        .anchorPreference(key: KeyFramesKey.self, value: .bounds) { [key: $0] }
-                    }
+            // The strip and the dictation status share a row: only one of
+            // them is ever relevant, and vertical space above the keys is
+            // the scarcest thing in a keyboard. The row is a fixed slot
+            // so swapping them never resizes the keyboard.
+            ZStack {
+                if state.suggestions.isEmpty {
+                    Text(state.handoffStatus ?? defaultHandoffStatus)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.9)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    SuggestionStrip(
+                        suggestions: state.suggestions,
+                        onApply: onApplySuggestion
+                    )
                 }
             }
+            .frame(maxWidth: .infinity)
+            .frame(height: Self.suggestionSlotHeight)
+            .clipped()
         }
-        .overlayPreferenceValue(KeyFramesKey.self) { anchors in
-            GeometryReader { proxy in
-                KeyTouchSurface(
-                    frames: anchors.mapValues { proxy[$0] },
-                    onPress: press,
-                    onRelease: release
-                )
-            }
-        }
-    }
-
-    /// A key fires the instant the finger lands, never on lift: firing on
-    /// touch-up is what makes fast typing feel like it drops characters.
-    private func press(_ key: KeyboardKey) {
-        guard !pressedKeys.contains(key) else { return }
-        pressedKeys.insert(key)
-        onKeyFeedback()
-        if key == .delete {
-            startRepeatingDelete()
-        } else {
-            handle(key)
-        }
-    }
-
-    private func release(_ key: KeyboardKey) {
-        pressedKeys.remove(key)
-        if key == .delete { stopRepeatingDelete() }
-    }
-
-    private func startRepeatingDelete() {
-        guard deleteRepeat == nil else { return }
-        onDelete()
-        // Held delete accelerates the way the system keyboard does: a pause
-        // long enough to mean "I meant one character", then a steady run.
-        deleteRepeat = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(350))
-            while !Task.isCancelled {
-                onDelete()
-                try? await Task.sleep(for: .milliseconds(70))
-            }
-        }
-    }
-
-    private func stopRepeatingDelete() {
-        deleteRepeat?.cancel()
-        deleteRepeat = nil
-    }
-
-    private var layout: KeyboardLayout {
-        mode == .letters ? .alphabetic : .numeric
-    }
-
-    private var keyboardColor: Color {
-        Color(appearanceColor: state.keyboardColor)
     }
 
     private var recordButtonColor: Color {
@@ -234,6 +187,97 @@ struct KeyboardView: View {
                 ? "Starts recording in the background without leaving this app"
                 : "Shows how to start Hermes dictation from any app"
         }
+    }
+}
+
+/// The keys, their touch surface, and the shift/mode state they share.
+private struct KeyGrid: View {
+    let state: KeyboardState
+    let onInsert: (String) -> Void
+    let onDelete: () -> Void
+    let onNextKeyboard: () -> Void
+    let onKeyFeedback: () -> Void
+
+    @State private var mode: KeyboardMode = .letters
+    @State private var isShifted = false
+    /// Keys with a finger on them right now; several at once while typing fast.
+    @State private var pressedKeys: Set<KeyboardKey> = []
+    @State private var deleteRepeat: Task<Void, Never>?
+
+    /// The caps draw; the touch surface over them types. Each cap reports
+    /// where it is so the surface can turn a finger into a key.
+    var body: some View {
+        VStack(spacing: 7) {
+            ForEach(Array(layout.rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 5) {
+                    ForEach(Array(row.enumerated()), id: \.offset) { _, key in
+                        KeyCap(
+                            key: key,
+                            shifted: isShifted,
+                            numericMode: mode == .numbers,
+                            showsNextKeyboard: state.showsNextKeyboard,
+                            isPressed: pressedKeys.contains(key),
+                            action: { handle(key) }
+                        )
+                        .anchorPreference(key: KeyFramesKey.self, value: .bounds) { [key: $0] }
+                    }
+                }
+            }
+        }
+        .overlayPreferenceValue(KeyFramesKey.self) { anchors in
+            GeometryReader { proxy in
+                KeyTouchSurface(
+                    frames: anchors.mapValues { proxy[$0] },
+                    onPress: press,
+                    onRelease: release
+                )
+            }
+        }
+        .onDisappear {
+            pressedKeys = []
+            stopRepeatingDelete()
+        }
+    }
+
+    /// A key fires the instant the finger lands, never on lift: firing on
+    /// touch-up is what makes fast typing feel like it drops characters.
+    private func press(_ key: KeyboardKey) {
+        guard !pressedKeys.contains(key) else { return }
+        pressedKeys.insert(key)
+        onKeyFeedback()
+        if key == .delete {
+            startRepeatingDelete()
+        } else {
+            handle(key)
+        }
+    }
+
+    private func release(_ key: KeyboardKey) {
+        pressedKeys.remove(key)
+        if key == .delete { stopRepeatingDelete() }
+    }
+
+    private func startRepeatingDelete() {
+        guard deleteRepeat == nil else { return }
+        onDelete()
+        // Held delete accelerates the way the system keyboard does: a pause
+        // long enough to mean "I meant one character", then a steady run.
+        deleteRepeat = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            while !Task.isCancelled {
+                onDelete()
+                try? await Task.sleep(for: .milliseconds(70))
+            }
+        }
+    }
+
+    private func stopRepeatingDelete() {
+        deleteRepeat?.cancel()
+        deleteRepeat = nil
+    }
+
+    private var layout: KeyboardLayout {
+        mode == .letters ? .alphabetic : .numeric
     }
 
     private func handle(_ key: KeyboardKey) {

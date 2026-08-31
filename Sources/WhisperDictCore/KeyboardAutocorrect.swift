@@ -97,6 +97,23 @@ public enum KeyboardAutocorrect {
         )
     }
 
+    /// The edit that fixes `word` after its terminator has already landed.
+    ///
+    /// Fast typing gets the terminator in before the dictionary answers, so
+    /// the keystroke goes through untouched and the correction follows: the
+    /// word and its terminator come out, the corrected word and the same
+    /// terminator go back in.
+    public static func replacementBehindTerminator(
+        of word: String,
+        with replacement: String,
+        terminator: String
+    ) -> KeyboardTextEdit {
+        KeyboardTextEdit(
+            deleteBackwardCount: word.count + terminator.count,
+            insertedText: replacement + terminator
+        )
+    }
+
     /// Words the checker may be confident about but the user meant literally:
     /// anything with a digit, an acronym, or a mid-word capital (a name, a
     /// brand, `iPhone`).
