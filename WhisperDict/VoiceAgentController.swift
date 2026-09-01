@@ -44,6 +44,9 @@ final class VoiceAgentController {
             // The voice speaks no filler while Hermes works, so on a live
             // call the thinking phase ticks softly instead of going dead.
             earcon.setActive(phase == .thinking && usesRealtime && conversationActive)
+            // A phase moving at all means the conversation is alive: someone
+            // is speaking, thinking, or answering.
+            noteConversationActivity()
         }
     }
     /// Starts empty: the thread is the person's, not a place for a canned
@@ -88,6 +91,15 @@ final class VoiceAgentController {
     private let recorder: DictationAudioRecorder
     private let transcriber: DictationTranscriber
     private let speaker = VoiceAgentSpeaker()
+    /// Holds the microphone and the session for a whole spoken conversation
+    /// so it survives the phone locking. Only the slower Hermes path needs
+    /// it; a live call's WebRTC session already runs unbroken.
+    private let conversationAudio = ConversationAudioSession()
+    /// Ends a conversation nobody is having. Without it, one that is simply
+    /// walked away from would hold the microphone open indefinitely — a
+    /// live call included — now that backgrounding no longer ends it.
+    private var idleWatch: ConversationIdleWatch?
+    private var idleWatchdog: Task<Void, Never>?
     private let earcon = ThinkingEarcon()
     private let realtimeClient = RealtimeAgentClient()
     private let hermesClient = HermesAgentClient()
@@ -346,6 +358,7 @@ final class VoiceAgentController {
         usesRealtime = true
         do {
             try await realtimeClient.start()
+            startIdleWatchdog()
             try? conversationStore.begin(id: id, mode: .realtime)
             refreshHistory()
             AgentTurnLog.note("live conversation started; hermes at \(settings.hermesServerURL)")
@@ -403,12 +416,29 @@ final class VoiceAgentController {
             return
         }
         onWillTakeAudioSession?()
+        // Opened here, in the foreground, and held for the whole
+        // conversation: iOS never lets a backgrounded app start a capture,
+        // so a session rebuilt per turn cannot survive the phone locking.
+        do {
+            try conversationAudio.start()
+        } catch {
+            phase = .failed(error.localizedDescription)
+            hermesConfiguration = nil
+            return
+        }
+        conversationAudio.onCaptureLost = { [weak self] in
+            Task { @MainActor in await self?.reportCaptureLost() }
+        }
+        recorder.managesAudioSession = false
+        recorder.sharedEngine = { [weak self] in self?.conversationAudio.engine }
+        speaker.holdsSharedSession = true
         conversationActive = true
         conversationID = id
         conversationSettings = settings
         usesRealtime = false
         usesHermes = true
         guard await startRecording(settings: settings) else {
+            releaseConversationAudio()
             conversationActive = false
             conversationID = nil
             conversationSettings = nil
@@ -416,6 +446,7 @@ final class VoiceAgentController {
             hermesConfiguration = nil
             return
         }
+        startIdleWatchdog()
         try? conversationStore.begin(id: id, mode: .hermes)
         refreshHistory()
         AgentTurnLog.note("hermes conversation started; server \(settings.hermesServerURL)")
@@ -732,12 +763,76 @@ final class VoiceAgentController {
         let message = "I paused because I didn't hear anything. Tap Start conversation when you're ready."
         messages.append(VoiceAgentMessage(role: .hermes, text: message))
         phase = .speaking
+        // Spoken while the conversation still owns the session, then handed
+        // back: this path does not go through endConversation, and without
+        // the release the microphone would stay open after it.
         await speaker.speak(message)
+        stopIdleWatchdog()
+        releaseConversationAudio()
         phase = .ready
         if let endingConversationID {
             try? conversationStore.end(id: endingConversationID)
             refreshHistory()
         }
+    }
+
+    private func noteConversationActivity() {
+        idleWatch?.noteActivity(at: ProcessInfo.processInfo.systemUptime)
+    }
+
+    /// Starts counting quiet. Every phase change resets it, so this only
+    /// runs out when both sides have genuinely stopped.
+    private func startIdleWatchdog() {
+        idleWatchdog?.cancel()
+        idleWatch = ConversationIdleWatch(startedAt: ProcessInfo.processInfo.systemUptime)
+        idleWatchdog = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled, let self, self.conversationActive,
+                      let watch = self.idleWatch
+                else { return }
+                guard watch.hasTimedOut(at: ProcessInfo.processInfo.systemUptime) else { continue }
+                await self.endForConversationIdle()
+                return
+            }
+        }
+    }
+
+    private func stopIdleWatchdog() {
+        idleWatchdog?.cancel()
+        idleWatchdog = nil
+        idleWatch = nil
+    }
+
+    /// Two minutes with nothing said in either direction. The conversation
+    /// ends the ordinary way, so the microphone and the session go back.
+    private func endForConversationIdle() async {
+        AgentTurnLog.note("conversation ended after two minutes idle")
+        await endConversation(announce: false)
+        messages.append(
+            VoiceAgentMessage(role: .milestone, text: "Conversation ended after two minutes of quiet")
+        )
+    }
+
+    /// Hands the microphone and the session back, and puts the recorder
+    /// back on its own engine for the next conversation.
+    private func releaseConversationAudio() {
+        conversationAudio.onCaptureLost = nil
+        conversationAudio.stop()
+        recorder.managesAudioSession = true
+        recorder.sharedEngine = nil
+        speaker.holdsSharedSession = false
+    }
+
+    /// The capture could not be rebuilt after the system took it. Carrying
+    /// on would leave Hermes listening to silence, so the conversation ends
+    /// and says why rather than appearing to still be there.
+    private func reportCaptureLost() async {
+        guard conversationActive, usesHermes else { return }
+        await endConversation(announce: false)
+        let message = "The microphone was taken by another app, so the conversation ended. Tap Talk to start again."
+        phase = .failed(message)
+        messages.append(VoiceAgentMessage(role: .hermes, text: message))
     }
 
     func endConversation(announce: Bool = true) async {
@@ -760,6 +855,8 @@ final class VoiceAgentController {
         usesRealtime = false
         speaker.stop()
         discardCurrentRecording()
+        stopIdleWatchdog()
+        releaseConversationAudio()
         phase = .ready
         if let endingConversationID {
             try? conversationStore.end(id: endingConversationID)
@@ -1338,13 +1435,24 @@ private final class VoiceAgentSpeaker: NSObject, AVSpeechSynthesizerDelegate {
         await withCheckedContinuation { drainContinuation = $0 }
     }
 
+    /// True while a conversation owns the session. Reconfiguring it then
+    /// would stop the capture the conversation depends on, and deactivating
+    /// it between replies would let a locked phone suspend the app.
+    var holdsSharedSession = false
+
     private func prepareAudioSession() {
+        guard !holdsSharedSession else { return }
         do {
             try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
             try audioSession.setActive(true)
         } catch {
             AgentTurnLog.note("speech audio setup failed: \(error.localizedDescription)")
         }
+    }
+
+    private func releaseAudioSession() {
+        guard !holdsSharedSession else { return }
+        try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     private func makeUtterance(_ text: String) -> AVSpeechUtterance {
@@ -1383,7 +1491,7 @@ private final class VoiceAgentSpeaker: NSObject, AVSpeechSynthesizerDelegate {
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
-        try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+        releaseAudioSession()
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
@@ -1409,6 +1517,6 @@ private final class VoiceAgentSpeaker: NSObject, AVSpeechSynthesizerDelegate {
             return
         }
         guard utterance == nil, queuedCount == 0 else { return }
-        try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+        releaseAudioSession()
     }
 }

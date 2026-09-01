@@ -70,6 +70,13 @@ struct ContentView: View {
                 if !dictation.isKeyboardHandoffSession {
                     await dictation.stopIfNeeded(settings: settings)
                 }
+                // A spoken conversation deliberately outlives the foreground.
+                // The phone locking on its own — which is what happens when
+                // you are talking and not touching it — used to end the
+                // conversation mid-sentence; the app declares the audio
+                // background mode and holds the session precisely so it does
+                // not have to.
+                guard !agent.conversationActive else { return }
                 await agent.stopIfNeeded(settings: settings)
             }
         }
