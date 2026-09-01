@@ -81,7 +81,7 @@ E100000000000000000000A3 /* RealtimeResponseGate.swift in Sources */ = {isa = PB
 		E10000000000000000000001 /* HermesMemoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000011 /* HermesMemoryStore.swift */; };
 		BE0000000000000000000001 /* KeyboardAutocorrect.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE0000000000000000000011 /* KeyboardAutocorrect.swift */; };
 		BE0000000000000000000002 /* KeyboardHitTesting.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE0000000000000000000012 /* KeyboardHitTesting.swift */; };
-		BF0000000000000000000002 /* KeyTouchSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000000000000000000012 /* KeyTouchSurface.swift */; };
+		BF0000000000000000000002 /* KeyGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000000000000000000012 /* KeyGridView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -186,7 +186,7 @@ E100000000000000000000A4 /* RealtimeResponseGate.swift */ = {isa = PBXFileRefere
 		E10000000000000000000011 /* HermesMemoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesMemoryStore.swift; sourceTree = "<group>"; };
 		BE0000000000000000000011 /* KeyboardAutocorrect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardAutocorrect.swift; sourceTree = "<group>"; };
 		BE0000000000000000000012 /* KeyboardHitTesting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHitTesting.swift; sourceTree = "<group>"; };
-		BF0000000000000000000012 /* KeyTouchSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyTouchSurface.swift; sourceTree = "<group>"; };
+		BF0000000000000000000012 /* KeyGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyGridView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -260,7 +260,7 @@ E100000000000000000000A4 /* RealtimeResponseGate.swift */ = {isa = PBXFileRefere
 				A10000000000000000000015 /* KeyboardViewController.swift */,
 				A10000000000000000000016 /* KeyboardView.swift */,
 				BF0000000000000000000011 /* SystemWordChecker.swift */,
-				BF0000000000000000000012 /* KeyTouchSurface.swift */,
+				BF0000000000000000000012 /* KeyGridView.swift */,
 				A10000000000000000000018 /* Info.plist */,
 				A10000000000000000000019 /* WhisperDictKeyboard.entitlements */,
 			);
@@ -535,7 +535,7 @@ E100000000000000000000A4 /* RealtimeResponseGate.swift */ = {isa = PBXFileRefere
 				BF0000000000000000000001 /* SystemWordChecker.swift in Sources */,
 				BE0000000000000000000001 /* KeyboardAutocorrect.swift in Sources */,
 				BE0000000000000000000002 /* KeyboardHitTesting.swift in Sources */,
-				BF0000000000000000000002 /* KeyTouchSurface.swift in Sources */,
+				BF0000000000000000000002 /* KeyGridView.swift in Sources */,
 				A10000000000000000000061 /* Keyboard TranscriptStore.swift in Sources */,
 				A10000000000000000000062 /* KeyboardLayout.swift in Sources */,
 				B50000000000000000000001 /* KeyboardTextProcessor.swift in Sources */,

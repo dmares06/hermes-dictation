@@ -28,12 +28,13 @@ struct KeyboardView: View {
                 onApplySuggestion: onApplySuggestion
             )
             KeyGrid(
-                state: state,
+                showsNextKeyboard: state.showsNextKeyboard,
                 onInsert: onInsert,
                 onDelete: onDelete,
                 onNextKeyboard: onNextKeyboard,
                 onKeyFeedback: onKeyFeedback
             )
+            .frame(height: KeyGridView.preferredHeight)
         }
         .padding(.horizontal, 5)
         .padding(.top, 6)
@@ -190,227 +191,56 @@ private struct KeyboardTopBar: View {
     }
 }
 
-/// The keys, their touch surface, and the shift/mode state they share.
-private struct KeyGrid: View {
-    let state: KeyboardState
+/// Hosts the UIKit key grid.
+///
+/// The grid owns its own shift and 123 state and reports only what the rest
+/// of the keyboard needs, so pressing a key never re-enters SwiftUI.
+private struct KeyGrid: UIViewRepresentable {
+    let showsNextKeyboard: Bool
     let onInsert: (String) -> Void
     let onDelete: () -> Void
     let onNextKeyboard: () -> Void
     let onKeyFeedback: () -> Void
 
-    @State private var mode: KeyboardMode = .letters
-    @State private var isShifted = false
-    /// Keys with a finger on them right now; several at once while typing fast.
-    @State private var pressedKeys: Set<KeyboardKey> = []
-    @State private var deleteRepeat: Task<Void, Never>?
+    func makeUIView(context: Context) -> KeyGridView {
+        let view = KeyGridView()
+        view.delegate = context.coordinator
+        view.showsNextKeyboard = showsNextKeyboard
+        return view
+    }
 
-    /// The caps draw; the touch surface over them types. Each cap reports
-    /// where it is so the surface can turn a finger into a key.
-    var body: some View {
-        VStack(spacing: 7) {
-            ForEach(Array(layout.rows.enumerated()), id: \.offset) { _, row in
-                HStack(spacing: 5) {
-                    ForEach(Array(row.enumerated()), id: \.offset) { _, key in
-                        KeyCap(
-                            key: key,
-                            shifted: isShifted,
-                            numericMode: mode == .numbers,
-                            showsNextKeyboard: state.showsNextKeyboard,
-                            isPressed: pressedKeys.contains(key),
-                            action: { handle(key) }
-                        )
-                        .anchorPreference(key: KeyFramesKey.self, value: .bounds) { [key: $0] }
-                    }
-                }
-            }
+    func updateUIView(_ view: KeyGridView, context: Context) {
+        context.coordinator.owner = self
+        view.showsNextKeyboard = showsNextKeyboard
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(owner: self)
+    }
+
+    /// Holds the current closures so the grid always calls into the latest
+    /// ones without being rebuilt.
+    final class Coordinator: KeyGridViewDelegate {
+        var owner: KeyGrid
+
+        init(owner: KeyGrid) {
+            self.owner = owner
         }
-        .overlayPreferenceValue(KeyFramesKey.self) { anchors in
-            GeometryReader { proxy in
-                KeyTouchSurface(
-                    frames: anchors.mapValues { proxy[$0] },
-                    onPress: press,
-                    onRelease: release
-                )
-            }
+
+        func keyGrid(_ grid: KeyGridView, didInsert text: String) {
+            owner.onInsert(text)
         }
-        .onDisappear {
-            pressedKeys = []
-            stopRepeatingDelete()
+
+        func keyGridDidDelete(_ grid: KeyGridView) {
+            owner.onDelete()
         }
-    }
 
-    /// A key fires the instant the finger lands, never on lift: firing on
-    /// touch-up is what makes fast typing feel like it drops characters.
-    private func press(_ key: KeyboardKey) {
-        guard !pressedKeys.contains(key) else { return }
-        pressedKeys.insert(key)
-        onKeyFeedback()
-        if key == .delete {
-            startRepeatingDelete()
-        } else {
-            handle(key)
+        func keyGridDidRequestNextKeyboard(_ grid: KeyGridView) {
+            owner.onNextKeyboard()
         }
-    }
 
-    private func release(_ key: KeyboardKey) {
-        pressedKeys.remove(key)
-        if key == .delete { stopRepeatingDelete() }
-    }
-
-    private func startRepeatingDelete() {
-        guard deleteRepeat == nil else { return }
-        onDelete()
-        // Held delete accelerates the way the system keyboard does: a pause
-        // long enough to mean "I meant one character", then a steady run.
-        deleteRepeat = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(350))
-            while !Task.isCancelled {
-                onDelete()
-                try? await Task.sleep(for: .milliseconds(70))
-            }
-        }
-    }
-
-    private func stopRepeatingDelete() {
-        deleteRepeat?.cancel()
-        deleteRepeat = nil
-    }
-
-    private var layout: KeyboardLayout {
-        mode == .letters ? .alphabetic : .numeric
-    }
-
-    private func handle(_ key: KeyboardKey) {
-        switch key {
-        case .character:
-            if let text = key.text(shifted: isShifted) { onInsert(text) }
-            if isShifted { isShifted = false }
-        case .shift:
-            isShifted.toggle()
-        case .delete:
-            onDelete()
-        case .modeChange:
-            mode = mode == .letters ? .numbers : .letters
-            isShifted = false
-        case .globe:
-            onNextKeyboard()
-        case .space, .returnKey:
-            if let text = key.insertedText { onInsert(text) }
-        }
-    }
-}
-
-private enum KeyboardMode {
-    case letters
-    case numbers
-}
-
-/// Where each cap ended up, in the grid's coordinates, for the touch surface.
-private struct KeyFramesKey: PreferenceKey {
-    static let defaultValue: [KeyboardKey: Anchor<CGRect>] = [:]
-    static func reduce(value: inout [KeyboardKey: Anchor<CGRect>], nextValue: () -> [KeyboardKey: Anchor<CGRect>]) {
-        value.merge(nextValue()) { _, new in new }
-    }
-}
-
-/// A key as drawn. Touches are handled by the surface above the grid, so
-/// this only has to look right — pressed or not — and answer VoiceOver.
-private struct KeyCap: View {
-    let key: KeyboardKey
-    let shifted: Bool
-    let numericMode: Bool
-    let showsNextKeyboard: Bool
-    let isPressed: Bool
-    let action: () -> Void
-
-    var body: some View {
-        keyCap
-            .overlay(alignment: .top) { popup }
-            .zIndex(isPressed ? 1 : 0)
-            .opacity(key == .globe && !showsNextKeyboard ? 0.45 : 1)
-            .accessibilityLabel(accessibilityLabel)
-            .accessibilityAddTraits(.isButton)
-            // VoiceOver drives the key through this, not the touch surface.
-            .accessibilityAction { action() }
-    }
-
-    @ViewBuilder
-    private var popup: some View {
-        if isPressed, let popupText {
-            Text(popupText)
-                .font(.title2.weight(.medium))
-                .foregroundStyle(.primary)
-                .frame(width: 54, height: 58)
-                .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 9))
-                .shadow(color: .black.opacity(0.28), radius: 2, y: 1)
-                .offset(y: -48)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
-    }
-
-    private var keyCap: some View {
-        Group {
-            switch key {
-            case .shift:
-                Image(systemName: shifted ? "shift.fill" : "shift")
-            case .delete:
-                Image(systemName: "delete.left")
-            case .globe:
-                Image(systemName: "globe")
-            case .returnKey:
-                Image(systemName: "return")
-            case .modeChange:
-                Text(numericMode ? "ABC" : "123")
-                    .font(.caption.weight(.medium))
-            case .space:
-                Text("space").font(.caption)
-            case .character:
-                Text(key.text(shifted: shifted) ?? "")
-                    .font(.title3)
-            }
-        }
-            .frame(maxWidth: key == .space ? .infinity : nil)
-            .frame(minWidth: minimumWidth, maxWidth: .infinity, minHeight: 42)
-            .foregroundStyle(.primary)
-            .background(backgroundColor, in: RoundedRectangle(cornerRadius: 6))
-            .shadow(color: .black.opacity(0.16), radius: 0.5, y: 1)
-    }
-
-    private var minimumWidth: CGFloat {
-        switch key {
-        case .space: 120
-        case .returnKey, .modeChange: 52
-        default: 28
-        }
-    }
-
-    /// A pressed cap darkens the way the system keyboard's does, so the
-    /// finger gets an answer even on keys with no popup.
-    private var backgroundColor: Color {
-        switch key {
-        case .character, .space:
-            isPressed ? Color(uiColor: .systemGray4) : Color(uiColor: .systemBackground)
-        default:
-            isPressed ? Color(uiColor: .systemBackground) : Color(uiColor: .systemGray3)
-        }
-    }
-
-    private var popupText: String? {
-        guard case .character(let value) = key,
-              value.allSatisfy(\.isLetter) else { return nil }
-        return key.text(shifted: shifted)
-    }
-
-    private var accessibilityLabel: String {
-        switch key {
-        case .character: key.text(shifted: shifted) ?? "key"
-        case .shift: "Shift"
-        case .delete: "Delete"
-        case .modeChange: numericMode ? "Letters" : "Numbers"
-        case .globe: "Next keyboard"
-        case .space: "Space"
-        case .returnKey: "Return"
+        func keyGridDidTouchKey(_ grid: KeyGridView) {
+            owner.onKeyFeedback()
         }
     }
 }

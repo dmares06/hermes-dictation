@@ -27,4 +27,23 @@ final class KeyboardHitTestingTests: XCTestCase {
         XCTAssertNil(KeyboardHitTesting.key(at: CGPoint(x: 200, y: 20), in: frames))
         XCTAssertNil(KeyboardHitTesting.key(at: CGPoint(x: 10, y: 200), in: frames))
     }
+
+    // MARK: - The grid has no dead zones
+
+    func testEveryTouchInsideTheGridReachesAKey() {
+        // The system keyboard never discards a touch: a finger landing low,
+        // high, or in a gap still meant a key. Dropping those reads as the
+        // keyboard missing keystrokes.
+        XCTAssertEqual(KeyboardHitTesting.nearestKey(at: CGPoint(x: 10, y: 200), in: frames), .space)
+        XCTAssertEqual(KeyboardHitTesting.nearestKey(at: CGPoint(x: 200, y: 10), in: frames), .character("w"))
+        XCTAssertEqual(KeyboardHitTesting.nearestKey(at: CGPoint(x: -40, y: -40), in: frames), .character("q"))
+    }
+
+    func testNearestKeyStillPrefersTheKeyUnderTheFinger() {
+        XCTAssertEqual(KeyboardHitTesting.nearestKey(at: CGPoint(x: 40, y: 20), in: frames), .character("w"))
+    }
+
+    func testNearestKeyOfNothingIsNothing() {
+        XCTAssertNil(KeyboardHitTesting.nearestKey(at: .zero, in: [:]))
+    }
 }

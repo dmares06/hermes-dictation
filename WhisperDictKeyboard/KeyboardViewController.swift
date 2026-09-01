@@ -145,33 +145,39 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func insertText(_ text: String) {
-        let context = textDocumentProxy.documentContextBeforeInput
+        // Letters are the hot path, and nothing on it needs the document
+        // context — reading it can round-trip to the host app, which is a
+        // tax no keystroke should pay just to land a character.
+        guard KeyboardAutocorrect.isWordTerminator(text) else {
+            textDocumentProxy.insertText(text)
+            refreshSuggestions()
+            return
+        }
 
         // A terminator is the moment a word is finished, and so the only
         // moment a correction can be applied without fighting the typist.
-        if KeyboardAutocorrect.isWordTerminator(text) {
-            let word = KeyboardAutocorrect.currentWord(before: context)
-            // A refusal lives exactly until its word is committed: this
-            // terminator is that commit, and it must pass through untouched.
-            let refused = !word.isEmpty && word == refusedWord
-            if !word.isEmpty { refusedWord = nil }
-            if !refused {
-                if let pending = pendingCorrection, pending.word == word {
-                    if let correction = pending.correction {
-                        perform(KeyboardAutocorrect.replacement(of: word, with: correction, followedBy: text))
-                        refreshSuggestions()
-                        return
-                    }
-                    // The word checked out clean: straight through below.
-                } else if word.count >= 2 {
-                    // Typing outran the debounced lookup. The keystroke must
-                    // never wait on the dictionary, so the terminator lands
-                    // now and the correction, if any, follows right behind.
-                    perform(KeyboardTextProcessor.edit(for: text, contextBeforeInput: context))
+        let context = textDocumentProxy.documentContextBeforeInput
+        let word = KeyboardAutocorrect.currentWord(before: context)
+        // A refusal lives exactly until its word is committed: this
+        // terminator is that commit, and it must pass through untouched.
+        let refused = !word.isEmpty && word == refusedWord
+        if !word.isEmpty { refusedWord = nil }
+        if !refused {
+            if let pending = pendingCorrection, pending.word == word {
+                if let correction = pending.correction {
+                    perform(KeyboardAutocorrect.replacement(of: word, with: correction, followedBy: text))
                     refreshSuggestions()
-                    correctBehindTerminator(word: word, terminator: text)
                     return
                 }
+                // The word checked out clean: straight through below.
+            } else if word.count >= 2 {
+                // Typing outran the debounced lookup. The keystroke must
+                // never wait on the dictionary, so the terminator lands
+                // now and the correction, if any, follows right behind.
+                perform(KeyboardTextProcessor.edit(for: text, contextBeforeInput: context))
+                refreshSuggestions()
+                correctBehindTerminator(word: word, terminator: text)
+                return
             }
         }
 
@@ -242,19 +248,20 @@ final class KeyboardViewController: UIInputViewController {
         // under the cursor. Only a fresh, completed lookup may repopulate it.
         behindTerminatorFix?.cancel()
         pendingCorrection = nil
-        let word = KeyboardAutocorrect.currentWord(before: textDocumentProxy.documentContextBeforeInput)
-        // An abandoned word releases its refusal; an edited-but-restored one
-        // keeps it, so refusing a correction sticks through a typo round-trip.
-        if word.isEmpty { refusedWord = nil }
-        guard word.count >= 2, word != refusedWord else {
-            if !keyboardState.suggestions.isEmpty { keyboardState.suggestions = [] }
-            return
-        }
         suggestionRefresh = Task { @MainActor [weak self] in
+            // Even reading the document context can round-trip to the host
+            // app, so it too waits out the debounce instead of taxing the
+            // keystroke that scheduled it.
             try? await Task.sleep(for: Self.suggestionDelay)
             guard !Task.isCancelled, let self else { return }
-            let current = KeyboardAutocorrect.currentWord(before: self.textDocumentProxy.documentContextBeforeInput)
-            guard current == word else { return }
+            let word = KeyboardAutocorrect.currentWord(before: self.textDocumentProxy.documentContextBeforeInput)
+            // An abandoned word releases its refusal; an edited-but-restored
+            // one keeps it, so a refusal sticks through a typo round-trip.
+            if word.isEmpty { self.refusedWord = nil }
+            guard word.count >= 2, word != self.refusedWord else {
+                if !self.keyboardState.suggestions.isEmpty { self.keyboardState.suggestions = [] }
+                return
+            }
             let suggestions = await self.spellWorker.suggestions(for: word)
             // The word may have moved on — or been refused — while the
             // dictionary was thinking.

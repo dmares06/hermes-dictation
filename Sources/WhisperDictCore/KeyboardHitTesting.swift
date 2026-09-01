@@ -25,6 +25,20 @@ public enum KeyboardHitTesting {
         return best?.key
     }
 
+    /// The key a finger meant, with no dead zones: the nearest cap however
+    /// far off the touch landed.
+    ///
+    /// This is what the grid uses. The system keyboard never discards a
+    /// touch — a finger landing low, high, or in a gap still meant a key,
+    /// and throwing those away is indistinguishable from a keyboard that
+    /// misses keystrokes.
+    public static func nearestKey(
+        at point: CGPoint,
+        in frames: [KeyboardKey: CGRect]
+    ) -> KeyboardKey? {
+        key(at: point, in: frames, tolerance: .infinity)
+    }
+
     private static func distance(from point: CGPoint, to rect: CGRect) -> CGFloat {
         let dx = max(rect.minX - point.x, 0, point.x - rect.maxX)
         let dy = max(rect.minY - point.y, 0, point.y - rect.maxY)
