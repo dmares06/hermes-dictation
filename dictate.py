@@ -30,7 +30,6 @@ import AVFoundation
 import sounddevice as sd
 import numpy as np
 from faster_whisper import WhisperModel
-import pyperclip
 from pynput import keyboard
 import Quartz
 import objc
@@ -45,10 +44,17 @@ from AppKit import (
     NSProgressIndicatorStyleSpinning, NSControlSizeSmall,
     NSApplicationActivationPolicyAccessory,
 )
-from Foundation import NSObject, NSLog, NSMakeRect, NSMakePoint
+from Foundation import NSObject, NSLog, NSMakeRect, NSMakePoint, NSProcessInfo
+
+# NSActivityUserInitiatedAllowingIdleSystemSleep: opts out of App Nap (which
+# throttled post-idle transcriptions to ~13s) without keeping the Mac awake.
+NS_ACTIVITY_USER_INITIATED_ALLOWING_IDLE_SLEEP = 0x00FFFFFF & ~(1 << 20)
+# Re-warm the GPU on hotkey press if the model has been idle this long.
+PREWARM_AFTER_IDLE_SECONDS = 30
 from hermes_store import LocalStore
 from hermes_hub import HubServer
 from hermes_indicator import IndicatorActivity
+from hermes_clipboard import ClipboardPaster, MacPasteboard, DEFAULT_RESTORE_DELAY
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 CONFIG_DIR = Path.home() / ".config" / "hermes-dictation"
@@ -214,6 +220,12 @@ class DictationEngine:
         self._transcription_lock = threading.Lock()
         self._hotkey_obj = self._resolve_hotkey()
         self.store: Optional[LocalStore] = None
+        self._last_inference = 0.0
+        self._paster = ClipboardPaster(
+            MacPasteboard(),
+            self._send_cmd_v,
+            restore_delay=config.get("clipboard_restore_delay", DEFAULT_RESTORE_DELAY),
+        )
 
     def _resolve_hotkey(self):
         key_name = self.config.get("hotkey", "alt_r")
@@ -349,6 +361,30 @@ class DictationEngine:
             self.audio_buffer = []
             self.is_recording = True
         log.info("🎤 Recording...")
+        self._prewarm_if_idle()
+
+    def _prewarm_if_idle(self):
+        """Wake the GPU while the user is still speaking, so release→text is fast."""
+        if self.backend != "mlx":
+            return
+        if time.monotonic() - self._last_inference < PREWARM_AFTER_IDLE_SECONDS:
+            return
+        threading.Thread(target=self._prewarm, name="prewarm", daemon=True).start()
+
+    def _prewarm(self):
+        # Skip if a real dictation is already running. A very short press can
+        # queue behind this warmup, but it is bounded (~0.5s even after idle)
+        # and replaces the cold-GPU cost that dictation would pay anyway.
+        if not self._transcription_lock.acquire(blocking=False):
+            return
+        try:
+            start = time.perf_counter()
+            self._transcribe(np.zeros(SAMPLE_RATE // 10, dtype=np.float32), quiet=True)
+            log.info("Prewarmed model in %.2fs", time.perf_counter() - start)
+        except Exception as exc:
+            log.warning("Prewarm failed: %s", exc)
+        finally:
+            self._transcription_lock.release()
 
     def stop_recording(self) -> Optional[CapturedAudio]:
         """End capture and return a trimmed in-memory waveform."""
@@ -400,9 +436,10 @@ class DictationEngine:
         with self._transcription_lock:
             return self._transcribe(audio)
 
-    def _transcribe(self, audio: np.ndarray) -> str:
+    def _transcribe(self, audio: np.ndarray, quiet: bool = False) -> str:
         model = self.load_model()
-        log.info("Transcribing with %s...", self.backend)
+        if not quiet:
+            log.info("Transcribing with %s...", self.backend)
         start = time.perf_counter()
 
         fast_mode = self.config.get("speed_mode", "quality") == "fast"
@@ -440,6 +477,9 @@ class DictationEngine:
             )
             text = " ".join(segment.text.strip() for segment in segments)
 
+        self._last_inference = time.monotonic()
+        if quiet:
+            return text
         elapsed = time.perf_counter() - start
         audio_seconds = len(audio) / SAMPLE_RATE
         realtime_factor = elapsed / max(audio_seconds, 0.001)
@@ -453,35 +493,23 @@ class DictationEngine:
         """Clean up transcribed text."""
         return clean_text(text, self.config)
 
+    @staticmethod
+    def _send_cmd_v():
+        source = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
+        if source is None:
+            source = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStatePrivate)
+        for is_down in (True, False):
+            event = Quartz.CGEventCreateKeyboardEvent(source, 0x09, is_down)  # V
+            Quartz.CGEventSetFlags(event, Quartz.kCGEventFlagMaskCommand)
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+
     def type_text(self, text: str):
         """Type text at cursor position using Cmd+V."""
         if not text:
             return
 
         try:
-            saved = pyperclip.paste()
-            pyperclip.copy(text)
-
-            source = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
-            if source is None:
-                source = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStatePrivate)
-
-            # Cmd+V
-            key_down = Quartz.CGEventCreateKeyboardEvent(source, 0x09, True)
-            Quartz.CGEventSetFlags(key_down, Quartz.kCGEventFlagMaskCommand)
-            Quartz.CGEventPost(Quartz.kCGHIDEventTap, key_down)
-
-            key_up = Quartz.CGEventCreateKeyboardEvent(source, 0x09, False)
-            Quartz.CGEventSetFlags(key_up, Quartz.kCGEventFlagMaskCommand)
-            Quartz.CGEventPost(Quartz.kCGHIDEventTap, key_up)
-
-            # Some apps process the paste event asynchronously. Restoring the
-            # clipboard after only 50ms can race that event and cause the
-            # previous clipboard contents to be inserted instead of the
-            # transcript. Give the target app time to consume our text first.
-            time.sleep(0.25)
-            pyperclip.copy(saved)
-
+            self._paster.paste(text)
             log.info(f"✏️  \"{text[:60]}{'...' if len(text) > 60 else ''}\"")
 
         except Exception as e:
@@ -642,6 +670,11 @@ class AppDelegate(NSObject):
 
     def applicationDidFinishLaunching_(self, notification):
         log.info("App finished launching")
+        # Held for the app's lifetime; releasing it would re-enable App Nap.
+        self._no_app_nap = NSProcessInfo.processInfo().beginActivityWithOptions_reason_(
+            NS_ACTIVITY_USER_INITIATED_ALLOWING_IDLE_SLEEP,
+            "Push-to-talk dictation must respond instantly",
+        )
         self.setup_menubar()
         if self.hub is not None:
             self.hub.start()
