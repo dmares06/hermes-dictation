@@ -195,6 +195,18 @@ struct ContentView: View {
                         action: { Task { await dictation.toggleRecording(settings: settings) } }
                     )
 
+                    if downloadService.isPrepared, settings.listeningWindow.isEnabled {
+                        BackgroundListeningCard(
+                            listening: listening,
+                            turnOff: { listening.turnOff() },
+                            turnOn: {
+                                listening.turnOn(duration: settings.listeningWindow)
+                                Task { await dictation.prewarmModel(settings: settings) }
+                            }
+                        )
+                        .disabled(dictation.isRecording || dictation.isBusy || agent.conversationActive)
+                    }
+
                     if !downloadService.isPrepared {
                         ModelPreparationCard(service: downloadService, model: settings.modelSize)
                     }
@@ -360,6 +372,49 @@ private struct RecordingCard: View {
     private var buttonForegroundColor: Color {
         guard !dictation.isRecording, recordButtonColor.prefersDarkForeground else { return .white }
         return .black
+    }
+}
+
+/// Shows whether the microphone is held open in the background and lets the
+/// user release it. Off stays off until they turn it back on here.
+private struct BackgroundListeningCard: View {
+    let listening: ListeningWindowController
+    let turnOff: () -> Void
+    let turnOn: () -> Void
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: listening.isListening ? "mic.fill" : "mic.slash.fill")
+                .font(.title3)
+                .foregroundStyle(listening.isListening ? .orange : .secondary)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(listening.isListening ? "Background listening is on" : "Background listening is off")
+                    .font(.subheadline.weight(.semibold))
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            if listening.isListening {
+                Button("Turn Off", role: .destructive, action: turnOff)
+                    .buttonStyle(.bordered)
+            } else {
+                Button("Turn On", action: turnOn)
+                    .buttonStyle(.bordered)
+            }
+        }
+        .padding()
+        .background(.background, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private var detail: String {
+        if listening.isListening {
+            guard let expiresAt = listening.expiresAt else { return "Microphone stays on until you turn it off." }
+            return "Microphone turns off at \(expiresAt.formatted(date: .omitted, time: .shortened)) if unused."
+        }
+        if let error = listening.lastError { return error }
+        return "Microphone is off. The keyboard can't start a dictation in the background."
     }
 }
 

@@ -11,6 +11,8 @@ final class ListeningWindowController {
     private(set) var isListening = false
     private(set) var expiresAt: Date?
     private(set) var lastError: String?
+    /// The user turned listening off; it stays off until they turn it on.
+    private(set) var isPausedByUser = ListeningWindowState.isPausedByUser()
 
     /// Called on the main actor when another process asks for a recording.
     @ObservationIgnored var onStartRequested: (@MainActor () async -> Void)?
@@ -26,6 +28,7 @@ final class ListeningWindowController {
     private let activityHost: DictationActivityHost
     @ObservationIgnored private var loopTask: Task<Void, Never>?
     @ObservationIgnored private var startObservation: DictationSignalObservation?
+    @ObservationIgnored private var endObservation: DictationSignalObservation?
     @ObservationIgnored private var interruptionObserver: NSObjectProtocol?
     private var duration: ListeningWindowDuration = .off
     private var lastActivity = Date()
@@ -45,7 +48,7 @@ final class ListeningWindowController {
     /// Starts or refreshes the window. Safe to call on every foreground.
     func activate(duration: ListeningWindowDuration) {
         self.duration = duration
-        guard duration.isEnabled else {
+        guard duration.isEnabled, !isPausedByUser else {
             deactivate()
             return
         }
@@ -74,10 +77,25 @@ final class ListeningWindowController {
         expiresAt = ListeningWindowPolicy.expiry(lastActivity: lastActivity, duration: duration)
     }
 
+    /// Releases the microphone and keeps it released, even when the app
+    /// comes back to the foreground, until `turnOn` is called.
+    func turnOff() {
+        isPausedByUser = true
+        ListeningWindowState.setPausedByUser(true)
+        deactivate()
+    }
+
+    func turnOn(duration: ListeningWindowDuration) {
+        isPausedByUser = false
+        ListeningWindowState.setPausedByUser(false)
+        activate(duration: duration)
+    }
+
     func deactivate() {
         loopTask?.cancel()
         loopTask = nil
         startObservation = nil
+        endObservation = nil
         if let interruptionObserver {
             NotificationCenter.default.removeObserver(interruptionObserver)
             self.interruptionObserver = nil
@@ -98,6 +116,9 @@ final class ListeningWindowController {
         startObservation = DictationSignalCenter.observe(.start) { [weak self] in
             Task { @MainActor [weak self] in await self?.consumePendingStart() }
         }
+        endObservation = DictationSignalCenter.observe(.endListening) { [weak self] in
+            Task { @MainActor [weak self] in self?.consumePendingEnd() }
+        }
         interruptionObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification,
             object: AVAudioSession.sharedInstance(),
@@ -115,6 +136,7 @@ final class ListeningWindowController {
                 try? await Task.sleep(for: Self.pollInterval)
                 guard !Task.isCancelled, let self else { return }
                 await self.consumePendingStart()
+                self.consumePendingEnd()
                 polls += 1
                 guard polls % Self.heartbeatEveryPolls == 0 else { continue }
                 self.tick()
@@ -126,6 +148,13 @@ final class ListeningWindowController {
         guard isListening, ListeningWindowState.consumeStartRequest() else { return }
         noteActivity()
         await onStartRequested?()
+    }
+
+    /// A turn-off request from the Live Activity. Never cuts a dictation
+    /// short: while one is in flight the request waits for the next poll.
+    private func consumePendingEnd() {
+        guard isListening, isBusy?() != true, ListeningWindowState.consumeEndRequest() else { return }
+        turnOff()
     }
 
     private func tick() {
