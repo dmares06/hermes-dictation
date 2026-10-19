@@ -31,6 +31,9 @@ struct ContentView: View {
     @State private var selectedTab: RootTab = .dictation
     @State private var hermesBusy = false
     @State private var messagePayload: MessageComposePayload?
+    /// Set by "Stop listening"; keeps the window shut until the app next
+    /// leaves the foreground, so Control Center or a banner cannot reopen it.
+    @State private var listeningStoppedByUser = false
     @AppStorage(
         BackgroundDictationState.Keys.foregroundToggleRequest,
         store: BackgroundDictationState.sharedDefaults
@@ -66,6 +69,8 @@ struct ContentView: View {
                 refreshListeningWindow()
                 return
             }
+            // Using the app again after leaving it reopens the window.
+            if newPhase == .background { listeningStoppedByUser = false }
             Task {
                 if !dictation.isKeyboardHandoffSession {
                     await dictation.stopIfNeeded(settings: settings)
@@ -94,7 +99,10 @@ struct ContentView: View {
                 Task { await notes.addReminder(draft) }
             }
         }
-        .onChange(of: settings.listeningWindow) { _, _ in refreshListeningWindow() }
+        .onChange(of: settings.listeningWindow) { _, _ in
+            listeningStoppedByUser = false
+            refreshListeningWindow()
+        }
         .onChange(of: agent.conversationActive) { _, active in
             // The agent configures its own audio session; the two cannot share.
             // Taking it happens synchronously through onWillTakeAudioSession,
@@ -164,7 +172,8 @@ struct ContentView: View {
     private func refreshListeningWindow() {
         guard downloadService.isPrepared,
               AVAudioApplication.shared.recordPermission == .granted,
-              !agent.conversationActive
+              !agent.conversationActive,
+              !listeningStoppedByUser
         else {
             listening.deactivate()
             return
@@ -201,6 +210,13 @@ struct ContentView: View {
                         recordButtonColor: settings.recordButtonColor,
                         action: { Task { await dictation.toggleRecording(settings: settings) } }
                     )
+
+                    if listening.isListening && !dictation.isRecording && !dictation.isBusy {
+                        BackgroundListeningCard(expiresAt: listening.expiresAt) {
+                            listeningStoppedByUser = true
+                            listening.deactivate()
+                        }
+                    }
 
                     if !downloadService.isPrepared {
                         ModelPreparationCard(service: downloadService, model: settings.modelSize)
@@ -649,6 +665,35 @@ private struct KeyboardTipCard: View {
             .background(.background, in: RoundedRectangle(cornerRadius: 18))
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// The background listening window holds the microphone open between
+/// dictations; this is the way to close it without changing the setting.
+private struct BackgroundListeningCard: View {
+    let expiresAt: Date?
+    let stopAction: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "mic.badge.xmark").font(.title2).foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Listening in the background").font(.headline)
+                detail.font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Stop", role: .destructive, action: stopAction)
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Stop listening")
+                .accessibilityHint("Turns the microphone off until you next open WhisperDict")
+        }
+        .padding()
+        .background(.background, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private var detail: Text {
+        guard let expiresAt else { return Text("The mic stays on until you close the app.") }
+        return Text("The mic stays on until \(expiresAt, style: .time) if unused.")
     }
 }
 
