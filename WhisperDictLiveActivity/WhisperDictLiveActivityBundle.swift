@@ -110,10 +110,18 @@ struct WhisperDictLiveActivityWidget: Widget {
             }, compact: compact)
             .tint(.red)
         } else if look.showsStart {
-            styled(Button(intent: StartListeningDictationIntent()) {
-                Image(systemName: "mic.fill").frame(width: compact ? nil : 38, height: compact ? nil : 38)
-            }, compact: compact)
-            .tint(.mint)
+            HStack(spacing: compact ? 14 : 8) {
+                // Turns background listening off and releases the microphone.
+                styled(Button(intent: EndListeningIntent()) {
+                    Image(systemName: "mic.slash.fill").frame(width: compact ? nil : 38, height: compact ? nil : 38)
+                }, compact: compact)
+                .tint(.gray)
+                .accessibilityLabel("Turn off listening")
+                styled(Button(intent: StartListeningDictationIntent()) {
+                    Image(systemName: "mic.fill").frame(width: compact ? nil : 38, height: compact ? nil : 38)
+                }, compact: compact)
+                .tint(.mint)
+            }
         }
     }
 

@@ -68,6 +68,8 @@ public enum ListeningWindowState {
     public enum Keys {
         public static let heartbeat = "listeningWindowHeartbeat"
         public static let startRequest = "listeningWindowStartRequest"
+        public static let endRequest = "listeningWindowEndRequest"
+        public static let pausedByUser = "listeningWindowPausedByUser"
     }
 
     /// The resident app refreshes its heartbeat more often than this, so a
@@ -108,5 +110,36 @@ public enum ListeningWindowState {
         guard defaults?.string(forKey: Keys.startRequest) != nil else { return false }
         defaults?.removeObject(forKey: Keys.startRequest)
         return true
+    }
+
+    /// Asks the resident app to stop listening and release the microphone.
+    /// Used by the Live Activity, which runs outside the app process.
+    public static func requestEnd(defaults: UserDefaults? = BackgroundDictationState.sharedDefaults) {
+        defaults?.set(UUID().uuidString, forKey: Keys.endRequest)
+    }
+
+    public static func consumeEndRequest(
+        defaults: UserDefaults? = BackgroundDictationState.sharedDefaults
+    ) -> Bool {
+        guard defaults?.string(forKey: Keys.endRequest) != nil else { return false }
+        defaults?.removeObject(forKey: Keys.endRequest)
+        return true
+    }
+
+    /// A window the user turned off stays off, across foregrounds and
+    /// relaunches, until they turn it back on.
+    public static func isPausedByUser(
+        defaults: UserDefaults? = BackgroundDictationState.sharedDefaults
+    ) -> Bool {
+        defaults?.bool(forKey: Keys.pausedByUser) ?? false
+    }
+
+    public static func setPausedByUser(
+        _ paused: Bool,
+        defaults: UserDefaults? = BackgroundDictationState.sharedDefaults
+    ) {
+        defaults?.set(paused, forKey: Keys.pausedByUser)
+        // A stale end request must not switch a freshly resumed window off.
+        if !paused { defaults?.removeObject(forKey: Keys.endRequest) }
     }
 }

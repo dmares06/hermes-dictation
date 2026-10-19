@@ -255,3 +255,19 @@ public struct StopWhisperDictIntent: AppIntent {
         return .result()
     }
 }
+
+/// Turns background listening off from the Live Activity, so the microphone
+/// can be released without opening the app.
+@available(iOS 18.0, macOS 26.0, *)
+public struct EndListeningIntent: AppIntent {
+    public static let title: LocalizedStringResource = "Turn Off WhisperDict Listening"
+    public static let description = IntentDescription("Stops background listening and turns the microphone off.")
+
+    public init() {}
+
+    public func perform() async throws -> some IntentResult {
+        ListeningWindowState.requestEnd()
+        DictationSignalCenter.post(.endListening)
+        return .result()
+    }
+}

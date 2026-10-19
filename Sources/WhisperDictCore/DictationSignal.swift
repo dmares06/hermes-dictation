@@ -14,6 +14,8 @@ import CoreFoundation
 public enum DictationSignal: String, CaseIterable, Sendable {
     case start = "com.dmares06.whisperdict.signal.start"
     case stop = "com.dmares06.whisperdict.signal.stop"
+    /// Turn background listening off and release the microphone.
+    case endListening = "com.dmares06.whisperdict.signal.endListening"
     /// A finished transcript is in the app group. Without it the keyboard
     /// would not show the text until its next poll, adding up to a quarter
     /// second to every dictation for no reason.
