@@ -119,6 +119,31 @@ final class ListeningWindowTests: XCTestCase {
         wait(for: [received], timeout: 2)
         withExtendedLifetime(observation) {}
     }
+
+    // MARK: Turning listening off
+
+    func testEndRequestIsConsumedOnce() {
+        XCTAssertFalse(ListeningWindowState.consumeEndRequest(defaults: defaults))
+        ListeningWindowState.requestEnd(defaults: defaults)
+        XCTAssertTrue(ListeningWindowState.consumeEndRequest(defaults: defaults))
+        XCTAssertFalse(ListeningWindowState.consumeEndRequest(defaults: defaults))
+    }
+
+    func testPausedByUserPersistsUntilResumed() {
+        XCTAssertFalse(ListeningWindowState.isPausedByUser(defaults: defaults))
+        ListeningWindowState.setPausedByUser(true, defaults: defaults)
+        XCTAssertTrue(ListeningWindowState.isPausedByUser(defaults: defaults))
+        ListeningWindowState.end(defaults: defaults)
+        XCTAssertTrue(ListeningWindowState.isPausedByUser(defaults: defaults), "ending a window must not resume it")
+        ListeningWindowState.setPausedByUser(false, defaults: defaults)
+        XCTAssertFalse(ListeningWindowState.isPausedByUser(defaults: defaults))
+    }
+
+    func testResumingDiscardsStaleEndRequest() {
+        ListeningWindowState.requestEnd(defaults: defaults)
+        ListeningWindowState.setPausedByUser(false, defaults: defaults)
+        XCTAssertFalse(ListeningWindowState.consumeEndRequest(defaults: defaults))
+    }
 }
 
 final class ListeningKeyboardGuidanceTests: XCTestCase {
@@ -146,30 +171,5 @@ final class ListeningKeyboardGuidanceTests: XCTestCase {
         XCTAssertEqual(KeyboardHandoffGuidance.recorderButtonTitle(for: .idle, listening: false), "Action Button")
         XCTAssertEqual(KeyboardHandoffGuidance.recorderButtonTitle(for: .recording, listening: true), "Stop")
         XCTAssertEqual(KeyboardHandoffGuidance.recorderButtonTitle(for: .transcribing, listening: false), "Working")
-    }
-
-    // MARK: Turning listening off
-
-    func testEndRequestIsConsumedOnce() {
-        XCTAssertFalse(ListeningWindowState.consumeEndRequest(defaults: defaults))
-        ListeningWindowState.requestEnd(defaults: defaults)
-        XCTAssertTrue(ListeningWindowState.consumeEndRequest(defaults: defaults))
-        XCTAssertFalse(ListeningWindowState.consumeEndRequest(defaults: defaults))
-    }
-
-    func testPausedByUserPersistsUntilResumed() {
-        XCTAssertFalse(ListeningWindowState.isPausedByUser(defaults: defaults))
-        ListeningWindowState.setPausedByUser(true, defaults: defaults)
-        XCTAssertTrue(ListeningWindowState.isPausedByUser(defaults: defaults))
-        ListeningWindowState.end(defaults: defaults)
-        XCTAssertTrue(ListeningWindowState.isPausedByUser(defaults: defaults), "ending a window must not resume it")
-        ListeningWindowState.setPausedByUser(false, defaults: defaults)
-        XCTAssertFalse(ListeningWindowState.isPausedByUser(defaults: defaults))
-    }
-
-    func testResumingDiscardsStaleEndRequest() {
-        ListeningWindowState.requestEnd(defaults: defaults)
-        ListeningWindowState.setPausedByUser(false, defaults: defaults)
-        XCTAssertFalse(ListeningWindowState.consumeEndRequest(defaults: defaults))
     }
 }
