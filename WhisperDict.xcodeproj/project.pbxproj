@@ -764,7 +764,7 @@ E100000000000000000000A4 /* RealtimeResponseGate.swift */ = {isa = PBXFileRefere
 			repositoryURL = "https://github.com/stasel/WebRTC.git";
 			requirement = {
 				kind = exactVersion;
-				version = 151.0.0;
+				version = 152.0.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
