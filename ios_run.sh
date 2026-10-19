@@ -181,7 +181,13 @@ fi
 # The Hermes Agent gateway lives on this Mac, so its API key can be read
 # straight from the Hermes config instead of being copied into a file.
 if [ -z "${WHISPERDICT_HERMES_KEY:-}" ] && command -v hermes >/dev/null 2>&1; then
-    WHISPERDICT_HERMES_KEY="$(hermes config get API_SERVER_KEY 2>/dev/null | tail -1)"
+    WHISPERDICT_HERMES_KEY="$(hermes config get API_SERVER_KEY 2>/dev/null | tail -1 || true)"
+fi
+# Newer Hermes releases no longer resolve the top-level key through
+# `config get`, so read it from the config file directly.
+HERMES_CONFIG="${HOME}/.hermes/config.yaml"
+if [ -z "${WHISPERDICT_HERMES_KEY:-}" ] && [ -f "$HERMES_CONFIG" ]; then
+    WHISPERDICT_HERMES_KEY="$(grep -E '^API_SERVER_KEY:' "$HERMES_CONFIG" | head -1 | cut -d: -f2- | tr -d " \"'" || true)"
 fi
 if [ -n "${WHISPERDICT_HERMES_KEY:-}" ]; then
     TOKEN_SETTING+=("WHISPERDICT_HERMES_KEY=${WHISPERDICT_HERMES_KEY}")
